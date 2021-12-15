@@ -29,7 +29,7 @@ public class SubResourceTest {
     @RegisterExtension
     static final QuarkusUnitTest TEST = new QuarkusUnitTest()
             .withApplicationRoot((jar) -> jar
-                    .addClasses(RootClient.class, SubClient.class, Resource.class));
+                    .addClasses(RootClient.class, SubClient.class, SubSubClient.class, Resource.class));
 
     @TestHTTPResource
     URI baseUri;
@@ -49,6 +49,14 @@ public class SubResourceTest {
         // should result in sending GET /path/rt/mthd/simple
         RootClient rootClient = RestClientBuilder.newBuilder().baseUri(baseUri).build(RootClient.class);
         String result = rootClient.sub("rt", "mthd").simpleGet();
+        assertThat(result).isEqualTo("rt/mthd/simple");
+    }
+
+    @Test
+    void shouldPassParamsToSubSubResource() {
+        // should result in sending GET /path/rt/mthd/simple
+        RootClient rootClient = RestClientBuilder.newBuilder().baseUri(baseUri).build(RootClient.class);
+        String result = rootClient.sub("rt", "mthd").sub().simpleGet();
         assertThat(result).isEqualTo("rt/mthd/simple");
     }
 
@@ -95,6 +103,9 @@ public class SubResourceTest {
         @Path("/simple")
         String simpleGet();
 
+        @Path("/sub")
+        SubSubClient sub();
+
         @POST
         @ClientHeaderParam(name = "overridable", value = "SubClient")
         @ClientHeaderParam(name = "fromSubMethod", value = "{fillingMethod}")
@@ -103,6 +114,14 @@ public class SubResourceTest {
         default String fillingMethod() {
             return "SubClientComputed";
         }
+    }
+
+    @Consumes("text/plain")
+    @Produces("text/plain")
+    interface SubSubClient {
+        @GET
+        @Path("/simple")
+        String simpleGet();
     }
 }
 

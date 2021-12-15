@@ -527,331 +527,17 @@ public class JaxrsClientReactiveProcessor {
                     continue;
                 }
 
+                // generate implementation for a method from jaxrs interface:
+                MethodCreator methodCreator = c.getMethodCreator(method.getName(), method.getSimpleReturnType(),
+                        javaMethodParameters);
+
                 if (method.getHttpMethod() == null) {
-                    Type returnType = jandexMethod.returnType();
-                    if (returnType.kind() != Type.Kind.CLASS) {
-                        // sort of sub-resource method that returns a thing that isn't a class
-                        throw new IllegalArgumentException("Sub resource type is not a class: " + returnType.name().toString());
-                    }
-                    ClassInfo subResourceInterface = index.getClassByName(returnType.name());
-                    if (!Modifier.isInterface(subResourceInterface.flags())) {
-                        throw new IllegalArgumentException(
-                                "Client interface method: " + jandexMethod.declaringClass().name() + "#" + jandexMethod
-                                        + " has no HTTP method annotation  (@GET, @POST, etc) and it's return type: "
-                                        + returnType.name().toString() + " is not an interface. "
-                                        + "If it's a sub resource method, it has to return an interface. "
-                                        + "If it's not, it has to have one of the HTTP method annotations.");
-                    }
-                    // generate implementation for a method from the jaxrs interface:
-                    MethodCreator methodCreator = c.getMethodCreator(method.getName(), method.getSimpleReturnType(),
-                            javaMethodParameters);
-
-                    String subName = subResourceInterface.name().toString() + HashUtil.sha1(name) + methodIndex;
-                    try (ClassCreator sub = new ClassCreator(
-                            new GeneratedClassGizmoAdaptor(generatedClasses, true),
-                            subName, null, Object.class.getName(), subResourceInterface.name().toString())) {
-
-                        ResultHandle subInstance = methodCreator.newInstance(MethodDescriptor.ofConstructor(subName));
-
-                        MethodCreator subConstructor = null;
-                        MethodCreator subClinit = null;
-                        if (!enrichers.isEmpty()) {
-                            subConstructor = sub.getMethodCreator(MethodDescriptor.ofConstructor(subName));
-                            subConstructor.invokeSpecialMethod(MethodDescriptor.ofConstructor(Object.class),
-                                    subConstructor.getThis());
-                            subClinit = sub.getMethodCreator(MethodDescriptor.ofMethod(subName, "<clinit>", void.class));
-                            subClinit.setModifiers(Opcodes.ACC_STATIC);
-                        }
-
-                        Map<Integer, FieldDescriptor> paramFields = new HashMap<>();
-                        for (int i = 0; i < method.getParameters().length; i++) {
-                            FieldDescriptor paramField = sub.getFieldCreator("param" + i, method.getParameters()[i].type)
-                                    .setModifiers(Modifier.PUBLIC)
-                                    .getFieldDescriptor();
-                            methodCreator.writeInstanceField(paramField, subInstance, methodCreator.getMethodParam(i));
-                            paramFields.put(i, paramField);
-                        }
-
-                        ResultHandle multipartForm = null;
-
-                        int subMethodIndex = 0;
-                        for (ResourceMethod subMethod : method.getSubResourceMethods()) {
-                            if (subMethod.getHttpMethod() == null) {
-                                continue;
-                            }
-                            MethodInfo jandexSubMethod = getJavaMethod(subResourceInterface, subMethod,
-                                    subMethod.getParameters(), index)
-                                            .orElseThrow(() -> new RuntimeException(
-                                                    "Failed to find matching java method for " + method + " on "
-                                                            + interfaceClass
-                                                            + ". It may have unresolved parameter types (generics)"));
-                            subMethodIndex++;
-                            // WebTarget field in the root stub implementation (not to recreate it on each call):
-
-                            // initializing the web target in the root stub constructor:
-                            FieldDescriptor webTargetForSubMethod = FieldDescriptor.of(name,
-                                    "target" + methodIndex + "_" + subMethodIndex,
-                                    WebTarget.class);
-                            c.getFieldCreator(webTargetForSubMethod).setModifiers(Modifier.FINAL);
-                            webTargets.add(webTargetForSubMethod);
-
-                            AssignableResultHandle constructorTarget = createWebTargetForMethod(constructor, baseTarget,
-                                    method);
-                            if (subMethod.getPath() != null) {
-                                appendPath(constructor, subMethod.getPath(), constructorTarget);
-                            }
-
-                            constructor.writeInstanceField(webTargetForSubMethod, constructor.getThis(), constructorTarget);
-
-                            // set the sub stub target field value to the target created above:
-                            FieldDescriptor subWebTarget = sub.getFieldCreator("target" + subMethodIndex, WebTarget.class)
-                                    .setModifiers(Modifier.PUBLIC)
-                                    .getFieldDescriptor();
-                            methodCreator.writeInstanceField(subWebTarget, subInstance,
-                                    methodCreator.readInstanceField(webTargetForSubMethod, methodCreator.getThis()));
-
-                            MethodCreator subMethodCreator = sub.getMethodCreator(subMethod.getName(),
-                                    jandexSubMethod.returnType().name().toString(),
-                                    parametersAsStringArray(jandexSubMethod));
-
-                            AssignableResultHandle methodTarget = subMethodCreator.createVariable(WebTarget.class);
-                            subMethodCreator.assign(methodTarget,
-                                    subMethodCreator.readInstanceField(subWebTarget, subMethodCreator.getThis()));
-
-                            ResultHandle bodyParameterValue = null;
-                            AssignableResultHandle formParams = null;
-                            Map<MethodDescriptor, ResultHandle> invocationBuilderEnrichers = new HashMap<>();
-
-                            // first go through parameters of the root stub method, we have them copied to fields in the sub stub
-                            for (int paramIdx = 0; paramIdx < method.getParameters().length; ++paramIdx) {
-                                MethodParameter param = method.getParameters()[paramIdx];
-                                ResultHandle paramValue = subMethodCreator.readInstanceField(paramFields.get(paramIdx),
-                                        subMethodCreator.getThis());
-                                if (param.parameterType == ParameterType.QUERY) {
-                                    //TODO: converters
-
-                                    // query params have to be set on a method-level web target (they vary between invocations)
-                                    subMethodCreator.assign(methodTarget,
-                                            addQueryParam(subMethodCreator, methodTarget, param.name,
-                                                    paramValue, jandexMethod.parameters().get(paramIdx), index));
-                                } else if (param.parameterType == ParameterType.BEAN) {
-                                    // bean params require both, web-target and Invocation.Builder, modifications
-                                    // The web target changes have to be done on the method level.
-                                    // Invocation.Builder changes are offloaded to a separate method
-                                    // so that we can generate bytecode for both, web target and invocation builder modifications
-                                    // at once
-                                    ClientBeanParamInfo beanParam = (ClientBeanParamInfo) param;
-                                    MethodDescriptor handleBeanParamDescriptor = MethodDescriptor.ofMethod(subName,
-                                            subMethod.getName() + "$$" + methodIndex + "$$handleBeanParam$$" + paramIdx,
-                                            Invocation.Builder.class,
-                                            Invocation.Builder.class, param.type);
-                                    MethodCreator handleBeanParamMethod = sub.getMethodCreator(handleBeanParamDescriptor);
-
-                                    AssignableResultHandle invocationBuilderRef = handleBeanParamMethod
-                                            .createVariable(Invocation.Builder.class);
-                                    handleBeanParamMethod.assign(invocationBuilderRef, handleBeanParamMethod.getMethodParam(0));
-                                    addBeanParamData(subMethodCreator, handleBeanParamMethod,
-                                            invocationBuilderRef, beanParam.getItems(),
-                                            paramValue, methodTarget, index);
-
-                                    handleBeanParamMethod.returnValue(invocationBuilderRef);
-                                    invocationBuilderEnrichers.put(handleBeanParamDescriptor, paramValue);
-                                } else if (param.parameterType == ParameterType.PATH) {
-                                    // methodTarget = methodTarget.resolveTemplate(paramname, paramvalue);
-                                    subMethodCreator.assign(methodTarget,
-                                            subMethodCreator.invokeInterfaceMethod(WEB_TARGET_RESOLVE_TEMPLATE_METHOD,
-                                                    methodTarget,
-                                                    subMethodCreator.load(param.name), paramValue));
-                                } else if (param.parameterType == ParameterType.BODY) {
-                                    // just store the index of parameter used to create the body, we'll use it later
-                                    bodyParameterValue = paramValue;
-                                } else if (param.parameterType == ParameterType.HEADER) {
-                                    // headers are added at the invocation builder level
-                                    MethodDescriptor handleHeaderDescriptor = MethodDescriptor.ofMethod(subName,
-                                            subMethod.getName() + "$$" + subMethodIndex + "$$handleHeader$$param" + paramIdx,
-                                            Invocation.Builder.class,
-                                            Invocation.Builder.class, param.type);
-                                    MethodCreator handleHeaderMethod = sub.getMethodCreator(handleHeaderDescriptor);
-
-                                    AssignableResultHandle invocationBuilderRef = handleHeaderMethod
-                                            .createVariable(Invocation.Builder.class);
-                                    handleHeaderMethod.assign(invocationBuilderRef, handleHeaderMethod.getMethodParam(0));
-                                    addHeaderParam(handleHeaderMethod, invocationBuilderRef, param.name,
-                                            handleHeaderMethod.getMethodParam(1));
-                                    handleHeaderMethod.returnValue(invocationBuilderRef);
-                                    invocationBuilderEnrichers.put(handleHeaderDescriptor, paramValue);
-                                } else if (param.parameterType == ParameterType.COOKIE) {
-                                    // cookies are added at the invocation builder level
-                                    MethodDescriptor handleCookieDescriptor = MethodDescriptor.ofMethod(subName,
-                                            subMethod.getName() + "$$" + subMethodIndex + "$$handleCookie$$param" + paramIdx,
-                                            Invocation.Builder.class,
-                                            Invocation.Builder.class, param.type);
-                                    MethodCreator handleCookieMethod = sub.getMethodCreator(handleCookieDescriptor);
-
-                                    AssignableResultHandle invocationBuilderRef = handleCookieMethod
-                                            .createVariable(Invocation.Builder.class);
-                                    handleCookieMethod.assign(invocationBuilderRef, handleCookieMethod.getMethodParam(0));
-                                    addCookieParam(handleCookieMethod, invocationBuilderRef, param.name,
-                                            handleCookieMethod.getMethodParam(1));
-                                    handleCookieMethod.returnValue(invocationBuilderRef);
-                                    invocationBuilderEnrichers.put(handleCookieDescriptor, paramValue);
-                                } else if (param.parameterType == ParameterType.FORM) {
-                                    formParams = createIfAbsent(subMethodCreator, formParams);
-                                    subMethodCreator.invokeInterfaceMethod(MULTIVALUED_MAP_ADD, formParams,
-                                            subMethodCreator.load(param.name), paramValue);
-                                } else if (param.parameterType == ParameterType.MULTI_PART_FORM) {
-                                    if (multipartForm != null) {
-                                        throw new IllegalArgumentException("MultipartForm data set twice for method "
-                                                + jandexSubMethod.declaringClass().name() + "#" + jandexSubMethod.name());
-                                    }
-                                    multipartForm = createMultipartForm(subMethodCreator, paramValue,
-                                            jandexMethod.parameters().get(paramIdx).asClassType(), index);
-                                }
-                            }
-                            // handle sub-method parameters:
-                            for (int paramIdx = 0; paramIdx < subMethod.getParameters().length; ++paramIdx) {
-                                MethodParameter param = subMethod.getParameters()[paramIdx];
-                                if (param.parameterType == ParameterType.QUERY) {
-                                    //TODO: converters
-
-                                    // query params have to be set on a method-level web target (they vary between invocations)
-                                    subMethodCreator.assign(methodTarget,
-                                            addQueryParam(subMethodCreator, methodTarget, param.name,
-                                                    subMethodCreator.getMethodParam(paramIdx),
-                                                    jandexSubMethod.parameters().get(paramIdx), index));
-                                } else if (param.parameterType == ParameterType.BEAN) {
-                                    // bean params require both, web-target and Invocation.Builder, modifications
-                                    // The web target changes have to be done on the method level.
-                                    // Invocation.Builder changes are offloaded to a separate method
-                                    // so that we can generate bytecode for both, web target and invocation builder modifications
-                                    // at once
-                                    ClientBeanParamInfo beanParam = (ClientBeanParamInfo) param;
-                                    MethodDescriptor handleBeanParamDescriptor = MethodDescriptor.ofMethod(subName,
-                                            subMethod.getName() + "$$" + subMethodIndex + "$$handleBeanParam$$" + paramIdx,
-                                            Invocation.Builder.class,
-                                            Invocation.Builder.class, param.type);
-                                    MethodCreator handleBeanParamMethod = c.getMethodCreator(handleBeanParamDescriptor);
-
-                                    AssignableResultHandle invocationBuilderRef = handleBeanParamMethod
-                                            .createVariable(Invocation.Builder.class);
-                                    handleBeanParamMethod.assign(invocationBuilderRef, handleBeanParamMethod.getMethodParam(0));
-                                    addBeanParamData(subMethodCreator, handleBeanParamMethod,
-                                            invocationBuilderRef, beanParam.getItems(),
-                                            subMethodCreator.getMethodParam(paramIdx), methodTarget, index);
-
-                                    handleBeanParamMethod.returnValue(invocationBuilderRef);
-                                    invocationBuilderEnrichers.put(handleBeanParamDescriptor,
-                                            subMethodCreator.getMethodParam(paramIdx));
-                                } else if (param.parameterType == ParameterType.PATH) {
-                                    // methodTarget = methodTarget.resolveTemplate(paramname, paramvalue);
-                                    subMethodCreator.assign(methodTarget,
-                                            subMethodCreator.invokeInterfaceMethod(WEB_TARGET_RESOLVE_TEMPLATE_METHOD,
-                                                    methodTarget,
-                                                    subMethodCreator.load(param.name),
-                                                    subMethodCreator.getMethodParam(paramIdx)));
-                                } else if (param.parameterType == ParameterType.BODY) {
-                                    // just store the index of parameter used to create the body, we'll use it later
-                                    bodyParameterValue = subMethodCreator.getMethodParam(paramIdx);
-                                } else if (param.parameterType == ParameterType.HEADER) {
-                                    // headers are added at the invocation builder level
-                                    MethodDescriptor handleHeaderDescriptor = MethodDescriptor.ofMethod(subName,
-                                            subMethod.getName() + "$$" + subMethodIndex + "$$handleHeader$$" + paramIdx,
-                                            Invocation.Builder.class,
-                                            Invocation.Builder.class, param.type);
-                                    MethodCreator handleHeaderMethod = sub.getMethodCreator(handleHeaderDescriptor);
-
-                                    AssignableResultHandle invocationBuilderRef = handleHeaderMethod
-                                            .createVariable(Invocation.Builder.class);
-                                    handleHeaderMethod.assign(invocationBuilderRef, handleHeaderMethod.getMethodParam(0));
-                                    addHeaderParam(handleHeaderMethod, invocationBuilderRef, param.name,
-                                            handleHeaderMethod.getMethodParam(1));
-                                    handleHeaderMethod.returnValue(invocationBuilderRef);
-                                    invocationBuilderEnrichers.put(handleHeaderDescriptor,
-                                            subMethodCreator.getMethodParam(paramIdx));
-                                } else if (param.parameterType == ParameterType.COOKIE) {
-                                    // cookies are added at the invocation builder level
-                                    MethodDescriptor handleHeaderDescriptor = MethodDescriptor.ofMethod(subName,
-                                            subMethod.getName() + "$$" + subMethodIndex + "$$handleCookie$$" + paramIdx,
-                                            Invocation.Builder.class,
-                                            Invocation.Builder.class, param.type);
-                                    MethodCreator handleCookieMethod = sub.getMethodCreator(handleHeaderDescriptor);
-
-                                    AssignableResultHandle invocationBuilderRef = handleCookieMethod
-                                            .createVariable(Invocation.Builder.class);
-                                    handleCookieMethod.assign(invocationBuilderRef, handleCookieMethod.getMethodParam(0));
-                                    addCookieParam(handleCookieMethod, invocationBuilderRef, param.name,
-                                            handleCookieMethod.getMethodParam(1));
-                                    handleCookieMethod.returnValue(invocationBuilderRef);
-                                    invocationBuilderEnrichers.put(handleHeaderDescriptor,
-                                            subMethodCreator.getMethodParam(paramIdx));
-                                } else if (param.parameterType == ParameterType.FORM) {
-                                    formParams = createIfAbsent(subMethodCreator, formParams);
-                                    subMethodCreator.invokeInterfaceMethod(MULTIVALUED_MAP_ADD, formParams,
-                                            subMethodCreator.load(param.name),
-                                            subMethodCreator.getMethodParam(paramIdx));
-                                } else if (param.parameterType == ParameterType.MULTI_PART_FORM) {
-                                    if (multipartForm != null) {
-                                        throw new IllegalArgumentException("MultipartForm data set twice for method "
-                                                + jandexSubMethod.declaringClass().name() + "#" + jandexSubMethod.name());
-                                    }
-                                    multipartForm = createMultipartForm(subMethodCreator,
-                                            subMethodCreator.getMethodParam(paramIdx),
-                                            jandexSubMethod.parameters().get(paramIdx), index);
-                                }
-
-                            }
-
-                            AssignableResultHandle builder = subMethodCreator.createVariable(Invocation.Builder.class);
-                            if (method.getProduces() == null || method.getProduces().length == 0) { // this should never happen!
-                                subMethodCreator.assign(builder, subMethodCreator.invokeInterfaceMethod(
-                                        MethodDescriptor.ofMethod(WebTarget.class, "request", Invocation.Builder.class),
-                                        methodTarget));
-                            } else {
-
-                                ResultHandle array = subMethodCreator.newArray(String.class, subMethod.getProduces().length);
-                                for (int i = 0; i < subMethod.getProduces().length; ++i) {
-                                    subMethodCreator.writeArrayValue(array, i,
-                                            subMethodCreator.load(subMethod.getProduces()[i]));
-                                }
-                                subMethodCreator.assign(builder, subMethodCreator.invokeInterfaceMethod(
-                                        MethodDescriptor.ofMethod(WebTarget.class, "request", Invocation.Builder.class,
-                                                String[].class),
-                                        methodTarget, array));
-                            }
-
-                            for (Map.Entry<MethodDescriptor, ResultHandle> invocationBuilderEnricher : invocationBuilderEnrichers
-                                    .entrySet()) {
-                                subMethodCreator.assign(builder,
-                                        subMethodCreator.invokeVirtualMethod(invocationBuilderEnricher.getKey(),
-                                                subMethodCreator.getThis(),
-                                                builder, invocationBuilderEnricher.getValue()));
-                            }
-
-                            for (JaxrsClientReactiveEnricherBuildItem enricher : enrichers) {
-                                enricher.getEnricher()
-                                        .forSubResourceMethod(sub, subConstructor, subClinit, subMethodCreator, interfaceClass,
-                                                subResourceInterface, jandexSubMethod, jandexMethod, builder, index,
-                                                generatedClasses, methodIndex, subMethodIndex);
-                            }
-
-                            String[] consumes = extractProducesConsumesValues(
-                                    jandexSubMethod.declaringClass().classAnnotation(CONSUMES), method.getConsumes());
-                            consumes = extractProducesConsumesValues(jandexSubMethod.annotation(CONSUMES), consumes);
-                            handleReturn(subResourceInterface, defaultMediaType,
-                                    getHttpMethod(jandexSubMethod, subMethod.getHttpMethod(), httpAnnotationToMethod),
-                                    consumes, jandexSubMethod, subMethodCreator, formParams, multipartForm, bodyParameterValue,
-                                    builder);
-                        }
-
-                        if (subConstructor != null) {
-                            subConstructor.returnValue(null);
-                            subClinit.returnValue(null);
-                        }
-
-                        methodCreator.returnValue(subInstance);
-                    }
+                    handleSubResourceMethod(enrichers, generatedClasses, interfaceClass, index,
+                            defaultMediaType,
+                            httpAnnotationToMethod,
+                            name, c, constructor,
+                            baseTarget, methodIndex, webTargets, method, methodCreator, jandexMethod);
                 } else {
-
                     // constructor: initializing the immutable part of the method-specific web target
                     FieldDescriptor webTargetForMethod = FieldDescriptor.of(name, "target" + methodIndex, WebTargetImpl.class);
                     c.getFieldCreator(webTargetForMethod).setModifiers(Modifier.FINAL);
@@ -870,10 +556,6 @@ public class JaxrsClientReactiveProcessor {
                                         MethodDescriptor.ofConstructor(ClientObservabilityHandler.class, String.class),
                                         constructor.load(templatePath)));
                     }
-
-                    // generate implementation for a method from jaxrs interface:
-                    MethodCreator methodCreator = c.getMethodCreator(method.getName(), method.getSimpleReturnType(),
-                            javaMethodParameters);
 
                     AssignableResultHandle methodTarget = methodCreator.createVariable(WebTarget.class);
                     methodCreator.assign(methodTarget,
@@ -1026,6 +708,353 @@ public class JaxrsClientReactiveProcessor {
         }
         return recorderContext.newInstance(creatorName);
 
+    }
+
+    private void handleSubResourceMethod(List<JaxrsClientReactiveEnricherBuildItem> enrichers,
+            BuildProducer<GeneratedClassBuildItem> generatedClasses, ClassInfo interfaceClass, IndexView index,
+            String defaultMediaType, Map<DotName, String> httpAnnotationToMethod, String name, ClassCreator c,
+            MethodCreator constructor, AssignableResultHandle baseTarget, int methodIndex, List<FieldDescriptor> webTargets,
+            ResourceMethod method, MethodCreator methodCreator, MethodInfo jandexMethod) {
+        Type returnType = jandexMethod.returnType();
+        if (returnType.kind() != Type.Kind.CLASS) {
+            // sort of sub-resource method that returns a thing that isn't a class
+            throw new IllegalArgumentException("Sub resource type is not a class: " + returnType.name().toString());
+        }
+        ClassInfo subResourceInterface = index.getClassByName(returnType.name());
+        if (!Modifier.isInterface(subResourceInterface.flags())) {
+            throw new IllegalArgumentException(
+                    "Client interface method: " + jandexMethod.declaringClass().name() + "#" + jandexMethod
+                            + " has no HTTP method annotation  (@GET, @POST, etc) and it's return type: "
+                            + returnType.name().toString() + " is not an interface. "
+                            + "If it's a sub resource method, it has to return an interface. "
+                            + "If it's not, it has to have one of the HTTP method annotations.");
+        }
+
+        String subName = subResourceInterface.name().toString() + HashUtil.sha1(name) + methodIndex;
+        try (ClassCreator sub = new ClassCreator(
+                new GeneratedClassGizmoAdaptor(generatedClasses, true),
+                subName, null, Object.class.getName(), subResourceInterface.name().toString())) {
+
+            ResultHandle subInstance = methodCreator.newInstance(MethodDescriptor.ofConstructor(subName));
+
+            MethodCreator subConstructor = null;
+            MethodCreator subClinit = null;
+            if (!enrichers.isEmpty()) {
+                subConstructor = sub.getMethodCreator(MethodDescriptor.ofConstructor(subName));
+                subConstructor.invokeSpecialMethod(MethodDescriptor.ofConstructor(Object.class),
+                        subConstructor.getThis());
+                subClinit = sub.getMethodCreator(MethodDescriptor.ofMethod(subName, "<clinit>", void.class));
+                subClinit.setModifiers(Opcodes.ACC_STATIC);
+            }
+
+            Map<Integer, FieldDescriptor> paramFields = new HashMap<>();
+            for (int i = 0; i < method.getParameters().length; i++) {
+                FieldDescriptor paramField = sub.getFieldCreator("param" + i, method.getParameters()[i].type)
+                        .setModifiers(Modifier.PUBLIC)
+                        .getFieldDescriptor();
+                methodCreator.writeInstanceField(paramField, subInstance, methodCreator.getMethodParam(i));
+                paramFields.put(i, paramField);
+            }
+
+            ResultHandle multipartForm = null;
+
+            int subMethodIndex = 0;
+            for (ResourceMethod subMethod : method.getSubResourceMethods()) {
+                subMethodIndex++;
+
+                // finding corresponding jandex method, used by enricher (MicroProfile enricher stores it in a field
+                // to later fill in context with corresponding java.lang.reflect.Method)
+                String[] subJavaMethodParameters = new String[subMethod.getParameters().length];
+                for (int i = 0; i < subMethod.getParameters().length; i++) {
+                    MethodParameter param = method.getParameters()[i];
+                    subJavaMethodParameters[i] = param.declaredType != null ? param.declaredType : param.type;
+                }
+                MethodInfo jandexSubMethod = getJavaMethod(subResourceInterface, subMethod,
+                        subMethod.getParameters(), index)
+                                .orElseThrow(() -> new RuntimeException(
+                                        "Failed to find matching java method for " + method + " on "
+                                                + interfaceClass
+                                                + ". It may have unresolved parameter types (generics)"));
+
+                MethodCreator subMethodCreator = sub.getMethodCreator(subMethod.getName(),
+                        jandexSubMethod.returnType().name().toString(),
+                        parametersAsStringArray(jandexSubMethod));
+
+                // WebTarget field in the root stub implementation (not to recreate it on each call):
+
+                // initializing the web target in the root stub constructor:
+                FieldDescriptor webTargetForSubMethod = FieldDescriptor.of(name,
+                        "target" + methodIndex + "_" + subMethodIndex,
+                        WebTarget.class);
+                c.getFieldCreator(webTargetForSubMethod).setModifiers(Modifier.FINAL);
+                webTargets.add(webTargetForSubMethod);
+
+                // set the sub stub target field value to the target created above:
+                FieldDescriptor subWebTarget = sub.getFieldCreator("target" + subMethodIndex, WebTarget.class)
+                        .setModifiers(Modifier.FINAL)
+                        .getFieldDescriptor();
+                methodCreator.writeInstanceField(subWebTarget, subInstance,
+                        methodCreator.readInstanceField(webTargetForSubMethod, methodCreator.getThis()));
+
+                AssignableResultHandle methodTarget = subMethodCreator.createVariable(WebTarget.class);
+                subMethodCreator.assign(methodTarget,
+                        subMethodCreator.readInstanceField(subWebTarget, subMethodCreator.getThis()));
+
+                AssignableResultHandle constructorTarget = createWebTargetForMethod(constructor, baseTarget,
+                        method);
+                if (subMethod.getPath() != null) {
+                    appendPath(constructor, subMethod.getPath(), constructorTarget);
+                }
+
+                constructor.writeInstanceField(webTargetForSubMethod, constructor.getThis(), constructorTarget);
+
+                if (subMethod.getHttpMethod() == null) {
+                    AssignableResultHandle subBaseTarget = subConstructor.createVariable(WebTarget.class);
+                    for (JaxrsClientReactiveEnricherBuildItem enricher : enrichers) {
+                        enricher.getEnricher().forClass(subConstructor, subBaseTarget, subResourceInterface, index);
+                    }
+
+                    handleSubResourceMethod(enrichers, generatedClasses,
+                            subResourceInterface, index, defaultMediaType,
+                            httpAnnotationToMethod,
+                            subName, sub, subConstructor,
+                            subBaseTarget, subMethodIndex, webTargets, subMethod, subMethodCreator,
+                            jandexSubMethod);
+
+                } else {
+                    ResultHandle bodyParameterValue = null;
+                    AssignableResultHandle formParams = null;
+                    Map<MethodDescriptor, ResultHandle> invocationBuilderEnrichers = new HashMap<>();
+
+                    // first go through parameters of the root stub method, we have them copied to fields in the sub stub
+                    for (int paramIdx = 0; paramIdx < method.getParameters().length; ++paramIdx) {
+                        MethodParameter param = method.getParameters()[paramIdx];
+                        ResultHandle paramValue = subMethodCreator.readInstanceField(paramFields.get(paramIdx),
+                                subMethodCreator.getThis());
+                        if (param.parameterType == ParameterType.QUERY) {
+                            //TODO: converters
+
+                            // query params have to be set on a method-level web target (they vary between invocations)
+                            subMethodCreator.assign(methodTarget,
+                                    addQueryParam(subMethodCreator, methodTarget, param.name,
+                                            paramValue, jandexMethod.parameters().get(paramIdx), index));
+                        } else if (param.parameterType == ParameterType.BEAN) {
+                            // bean params require both, web-target and Invocation.Builder, modifications
+                            // The web target changes have to be done on the method level.
+                            // Invocation.Builder changes are offloaded to a separate method
+                            // so that we can generate bytecode for both, web target and invocation builder modifications
+                            // at once
+                            ClientBeanParamInfo beanParam = (ClientBeanParamInfo) param;
+                            MethodDescriptor handleBeanParamDescriptor = MethodDescriptor.ofMethod(subName,
+                                    subMethod.getName() + "$$" + methodIndex + "$$handleBeanParam$$" + paramIdx,
+                                    Invocation.Builder.class,
+                                    Invocation.Builder.class, param.type);
+                            MethodCreator handleBeanParamMethod = sub.getMethodCreator(handleBeanParamDescriptor);
+
+                            AssignableResultHandle invocationBuilderRef = handleBeanParamMethod
+                                    .createVariable(Invocation.Builder.class);
+                            handleBeanParamMethod.assign(invocationBuilderRef, handleBeanParamMethod.getMethodParam(0));
+                            addBeanParamData(subMethodCreator, handleBeanParamMethod,
+                                    invocationBuilderRef, beanParam.getItems(),
+                                    paramValue, methodTarget, index);
+
+                            handleBeanParamMethod.returnValue(invocationBuilderRef);
+                            invocationBuilderEnrichers.put(handleBeanParamDescriptor, paramValue);
+                        } else if (param.parameterType == ParameterType.PATH) {
+                            // methodTarget = methodTarget.resolveTemplate(paramname, paramvalue);
+                            subMethodCreator.assign(methodTarget,
+                                    subMethodCreator.invokeInterfaceMethod(WEB_TARGET_RESOLVE_TEMPLATE_METHOD,
+                                            methodTarget,
+                                            subMethodCreator.load(param.name), paramValue));
+                        } else if (param.parameterType == ParameterType.BODY) {
+                            // just store the index of parameter used to create the body, we'll use it later
+                            bodyParameterValue = paramValue;
+                        } else if (param.parameterType == ParameterType.HEADER) {
+                            // headers are added at the invocation builder level
+                            MethodDescriptor handleHeaderDescriptor = MethodDescriptor.ofMethod(subName,
+                                    subMethod.getName() + "$$" + subMethodIndex + "$$handleHeader$$param" + paramIdx,
+                                    Invocation.Builder.class,
+                                    Invocation.Builder.class, param.type);
+                            MethodCreator handleHeaderMethod = sub.getMethodCreator(handleHeaderDescriptor);
+
+                            AssignableResultHandle invocationBuilderRef = handleHeaderMethod
+                                    .createVariable(Invocation.Builder.class);
+                            handleHeaderMethod.assign(invocationBuilderRef, handleHeaderMethod.getMethodParam(0));
+                            addHeaderParam(handleHeaderMethod, invocationBuilderRef, param.name,
+                                    handleHeaderMethod.getMethodParam(1));
+                            handleHeaderMethod.returnValue(invocationBuilderRef);
+                            invocationBuilderEnrichers.put(handleHeaderDescriptor, paramValue);
+                        } else if (param.parameterType == ParameterType.COOKIE) {
+                            // cookies are added at the invocation builder level
+                            MethodDescriptor handleCookieDescriptor = MethodDescriptor.ofMethod(subName,
+                                    subMethod.getName() + "$$" + subMethodIndex + "$$handleCookie$$param" + paramIdx,
+                                    Invocation.Builder.class,
+                                    Invocation.Builder.class, param.type);
+                            MethodCreator handleCookieMethod = sub.getMethodCreator(handleCookieDescriptor);
+
+                            AssignableResultHandle invocationBuilderRef = handleCookieMethod
+                                    .createVariable(Invocation.Builder.class);
+                            handleCookieMethod.assign(invocationBuilderRef, handleCookieMethod.getMethodParam(0));
+                            addCookieParam(handleCookieMethod, invocationBuilderRef, param.name,
+                                    handleCookieMethod.getMethodParam(1));
+                            handleCookieMethod.returnValue(invocationBuilderRef);
+                            invocationBuilderEnrichers.put(handleCookieDescriptor, paramValue);
+                        } else if (param.parameterType == ParameterType.FORM) {
+                            formParams = createIfAbsent(subMethodCreator, formParams);
+                            subMethodCreator.invokeInterfaceMethod(MULTIVALUED_MAP_ADD, formParams,
+                                    subMethodCreator.load(param.name), paramValue);
+                        } else if (param.parameterType == ParameterType.MULTI_PART_FORM) {
+                            if (multipartForm != null) {
+                                throw new IllegalArgumentException("MultipartForm data set twice for method "
+                                        + jandexSubMethod.declaringClass().name() + "#" + jandexSubMethod.name());
+                            }
+                            multipartForm = createMultipartForm(subMethodCreator, paramValue,
+                                    jandexMethod.parameters().get(paramIdx).asClassType(), index);
+                        }
+                    }
+                    // handle sub-method parameters:
+                    for (int paramIdx = 0; paramIdx < subMethod.getParameters().length; ++paramIdx) {
+                        MethodParameter param = subMethod.getParameters()[paramIdx];
+                        if (param.parameterType == ParameterType.QUERY) {
+                            //TODO: converters
+
+                            // query params have to be set on a method-level web target (they vary between invocations)
+                            subMethodCreator.assign(methodTarget,
+                                    addQueryParam(subMethodCreator, methodTarget, param.name,
+                                            subMethodCreator.getMethodParam(paramIdx),
+                                            jandexSubMethod.parameters().get(paramIdx), index));
+                        } else if (param.parameterType == ParameterType.BEAN) {
+                            // bean params require both, web-target and Invocation.Builder, modifications
+                            // The web target changes have to be done on the method level.
+                            // Invocation.Builder changes are offloaded to a separate method
+                            // so that we can generate bytecode for both, web target and invocation builder modifications
+                            // at once
+                            ClientBeanParamInfo beanParam = (ClientBeanParamInfo) param;
+                            MethodDescriptor handleBeanParamDescriptor = MethodDescriptor.ofMethod(subName,
+                                    subMethod.getName() + "$$" + subMethodIndex + "$$handleBeanParam$$" + paramIdx,
+                                    Invocation.Builder.class,
+                                    Invocation.Builder.class, param.type);
+                            MethodCreator handleBeanParamMethod = c.getMethodCreator(handleBeanParamDescriptor);
+
+                            AssignableResultHandle invocationBuilderRef = handleBeanParamMethod
+                                    .createVariable(Invocation.Builder.class);
+                            handleBeanParamMethod.assign(invocationBuilderRef, handleBeanParamMethod.getMethodParam(0));
+                            addBeanParamData(subMethodCreator, handleBeanParamMethod,
+                                    invocationBuilderRef, beanParam.getItems(),
+                                    subMethodCreator.getMethodParam(paramIdx), methodTarget, index);
+
+                            handleBeanParamMethod.returnValue(invocationBuilderRef);
+                            invocationBuilderEnrichers.put(handleBeanParamDescriptor,
+                                    subMethodCreator.getMethodParam(paramIdx));
+                        } else if (param.parameterType == ParameterType.PATH) {
+                            // methodTarget = methodTarget.resolveTemplate(paramname, paramvalue);
+                            subMethodCreator.assign(methodTarget,
+                                    subMethodCreator.invokeInterfaceMethod(WEB_TARGET_RESOLVE_TEMPLATE_METHOD,
+                                            methodTarget,
+                                            subMethodCreator.load(param.name),
+                                            subMethodCreator.getMethodParam(paramIdx)));
+                        } else if (param.parameterType == ParameterType.BODY) {
+                            // just store the index of parameter used to create the body, we'll use it later
+                            bodyParameterValue = subMethodCreator.getMethodParam(paramIdx);
+                        } else if (param.parameterType == ParameterType.HEADER) {
+                            // headers are added at the invocation builder level
+                            MethodDescriptor handleHeaderDescriptor = MethodDescriptor.ofMethod(subName,
+                                    subMethod.getName() + "$$" + subMethodIndex + "$$handleHeader$$" + paramIdx,
+                                    Invocation.Builder.class,
+                                    Invocation.Builder.class, param.type);
+                            MethodCreator handleHeaderMethod = sub.getMethodCreator(handleHeaderDescriptor);
+
+                            AssignableResultHandle invocationBuilderRef = handleHeaderMethod
+                                    .createVariable(Invocation.Builder.class);
+                            handleHeaderMethod.assign(invocationBuilderRef, handleHeaderMethod.getMethodParam(0));
+                            addHeaderParam(handleHeaderMethod, invocationBuilderRef, param.name,
+                                    handleHeaderMethod.getMethodParam(1));
+                            handleHeaderMethod.returnValue(invocationBuilderRef);
+                            invocationBuilderEnrichers.put(handleHeaderDescriptor,
+                                    subMethodCreator.getMethodParam(paramIdx));
+                        } else if (param.parameterType == ParameterType.COOKIE) {
+                            // cookies are added at the invocation builder level
+                            MethodDescriptor handleHeaderDescriptor = MethodDescriptor.ofMethod(subName,
+                                    subMethod.getName() + "$$" + subMethodIndex + "$$handleCookie$$" + paramIdx,
+                                    Invocation.Builder.class,
+                                    Invocation.Builder.class, param.type);
+                            MethodCreator handleCookieMethod = sub.getMethodCreator(handleHeaderDescriptor);
+
+                            AssignableResultHandle invocationBuilderRef = handleCookieMethod
+                                    .createVariable(Invocation.Builder.class);
+                            handleCookieMethod.assign(invocationBuilderRef, handleCookieMethod.getMethodParam(0));
+                            addCookieParam(handleCookieMethod, invocationBuilderRef, param.name,
+                                    handleCookieMethod.getMethodParam(1));
+                            handleCookieMethod.returnValue(invocationBuilderRef);
+                            invocationBuilderEnrichers.put(handleHeaderDescriptor,
+                                    subMethodCreator.getMethodParam(paramIdx));
+                        } else if (param.parameterType == ParameterType.FORM) {
+                            formParams = createIfAbsent(subMethodCreator, formParams);
+                            subMethodCreator.invokeInterfaceMethod(MULTIVALUED_MAP_ADD, formParams,
+                                    subMethodCreator.load(param.name),
+                                    subMethodCreator.getMethodParam(paramIdx));
+                        } else if (param.parameterType == ParameterType.MULTI_PART_FORM) {
+                            if (multipartForm != null) {
+                                throw new IllegalArgumentException("MultipartForm data set twice for method "
+                                        + jandexSubMethod.declaringClass().name() + "#" + jandexSubMethod.name());
+                            }
+                            multipartForm = createMultipartForm(subMethodCreator,
+                                    subMethodCreator.getMethodParam(paramIdx),
+                                    jandexSubMethod.parameters().get(paramIdx), index);
+                        }
+
+                    }
+
+                    AssignableResultHandle builder = subMethodCreator.createVariable(Invocation.Builder.class);
+                    if (method.getProduces() == null || method.getProduces().length == 0) { // this should never happen!
+                        subMethodCreator.assign(builder, subMethodCreator.invokeInterfaceMethod(
+                                MethodDescriptor.ofMethod(WebTarget.class, "request", Invocation.Builder.class),
+                                methodTarget));
+                    } else {
+
+                        ResultHandle array = subMethodCreator.newArray(String.class, subMethod.getProduces().length);
+                        for (int i = 0; i < subMethod.getProduces().length; ++i) {
+                            subMethodCreator.writeArrayValue(array, i,
+                                    subMethodCreator.load(subMethod.getProduces()[i]));
+                        }
+                        subMethodCreator.assign(builder, subMethodCreator.invokeInterfaceMethod(
+                                MethodDescriptor.ofMethod(WebTarget.class, "request", Invocation.Builder.class,
+                                        String[].class),
+                                methodTarget, array));
+                    }
+
+                    for (Map.Entry<MethodDescriptor, ResultHandle> invocationBuilderEnricher : invocationBuilderEnrichers
+                            .entrySet()) {
+                        subMethodCreator.assign(builder,
+                                subMethodCreator.invokeVirtualMethod(invocationBuilderEnricher.getKey(),
+                                        subMethodCreator.getThis(),
+                                        builder, invocationBuilderEnricher.getValue()));
+                    }
+
+                    for (JaxrsClientReactiveEnricherBuildItem enricher : enrichers) {
+                        enricher.getEnricher()
+                                .forSubResourceMethod(sub, subConstructor, subClinit, subMethodCreator, interfaceClass,
+                                        subResourceInterface, jandexSubMethod, jandexMethod, builder, index,
+                                        generatedClasses, methodIndex, subMethodIndex);
+                    }
+
+                    String[] consumes = extractProducesConsumesValues(
+                            jandexSubMethod.declaringClass().classAnnotation(CONSUMES), method.getConsumes());
+                    consumes = extractProducesConsumesValues(jandexSubMethod.annotation(CONSUMES), consumes);
+                    handleReturn(subResourceInterface, defaultMediaType,
+                            getHttpMethod(jandexSubMethod, subMethod.getHttpMethod(), httpAnnotationToMethod),
+                            consumes, jandexSubMethod, subMethodCreator, formParams, multipartForm, bodyParameterValue,
+                            builder);
+                }
+            }
+
+            if (subConstructor != null) {
+                subConstructor.returnValue(null);
+                subClinit.returnValue(null);
+            }
+
+            methodCreator.returnValue(subInstance);
+        }
     }
 
     /*

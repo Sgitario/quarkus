@@ -21,6 +21,12 @@ public class Resource {
         return String.format("%s/%s/%s", part1, part2, part3);
     }
 
+    @GET
+    @Path("{part1}/{part2}/{part3}/{part4}")
+    public String getUriParts(@RestPath String part1, @RestPath String part2, @RestPath String part3, @RestPath String part4) {
+        return String.format("%s/%s/%s/%s", part1, part2, part3, part4);
+    }
+
     @POST
     @Path("{part1}/{part2}")
     public Response getUriEntityAndQueryParam(@RestPath String part1, @RestPath String part2, @RestQuery String queryParam,
