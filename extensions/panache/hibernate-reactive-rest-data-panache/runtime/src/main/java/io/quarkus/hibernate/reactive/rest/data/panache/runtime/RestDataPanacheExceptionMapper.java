@@ -1,34 +1,52 @@
 package io.quarkus.hibernate.reactive.rest.data.panache.runtime;
 
 import javax.ws.rs.core.Response;
-import javax.ws.rs.ext.ExceptionMapper;
 
+import org.hibernate.HibernateException;
 import org.jboss.logging.Logger;
+import org.jboss.resteasy.reactive.RestResponse;
+import org.jboss.resteasy.reactive.server.ServerExceptionMapper;
 
-import io.quarkus.rest.data.panache.RestDataPanacheException;
+import io.smallrye.mutiny.CompositeException;
 
-public class RestDataPanacheExceptionMapper implements ExceptionMapper<RestDataPanacheException> {
+public class RestDataPanacheExceptionMapper {
+
     private static final Logger LOGGER = Logger.getLogger(RestDataPanacheExceptionMapper.class);
 
-    @Override
-    public Response toResponse(RestDataPanacheException exception) {
-        LOGGER.warnf(exception, "Mapping an unhandled %s", RestDataPanacheException.class.getSimpleName());
-        return throwableToResponse(exception, exception.getMessage());
+    @ServerExceptionMapper
+    public RestResponse<Response> mapException(Exception exception) {
+        LOGGER.warnf(exception, "Mapping an unhandled %s", exception.getClass().getSimpleName());
+        RestResponse<Response> response = throwableToResponse(exception, exception.getMessage());
+        if (response == null) {
+            response = RestResponse.status(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), exception.getMessage());
+        }
+
+        return response;
     }
 
-    private Response throwableToResponse(Throwable throwable, String message) {
-        if (throwable instanceof org.hibernate.exception.ConstraintViolationException) {
-            return Response.status(Response.Status.CONFLICT.getStatusCode(), message).build();
+    private RestResponse<Response> throwableToResponse(Throwable throwable, String message) {
+        if (throwable instanceof org.hibernate.exception.ConstraintViolationException
+                || throwable instanceof HibernateException) {
+            return RestResponse.status(Response.Status.CONFLICT.getStatusCode(), message);
         }
 
         if (throwable instanceof javax.validation.ConstraintViolationException) {
-            return Response.status(Response.Status.BAD_REQUEST.getStatusCode(), message).build();
+            return RestResponse.status(Response.Status.BAD_REQUEST.getStatusCode(), message);
         }
 
-        if (throwable.getCause() != null) {
+        if (throwable instanceof CompositeException) {
+            CompositeException compositeException = (CompositeException) throwable;
+            for (Throwable cause : compositeException.getCauses()) {
+                RestResponse<Response> response = throwableToResponse(cause, message);
+                if (response != null) {
+                    return response;
+                }
+            }
+
+        } else if (throwable.getCause() != null) {
             return throwableToResponse(throwable.getCause(), message);
         }
 
-        return Response.status(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), message).build();
+        return null;
     };
 }

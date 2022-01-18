@@ -5,8 +5,6 @@ import static io.quarkus.deployment.Feature.HIBERNATE_REACTIVE_REST_DATA_PANACHE
 import java.lang.reflect.Modifier;
 import java.util.List;
 
-import javax.ws.rs.Priorities;
-
 import org.jboss.jandex.ClassInfo;
 import org.jboss.jandex.DotName;
 import org.jboss.jandex.IndexView;
@@ -23,11 +21,9 @@ import io.quarkus.gizmo.ClassOutput;
 import io.quarkus.hibernate.reactive.rest.data.panache.PanacheEntityResource;
 import io.quarkus.hibernate.reactive.rest.data.panache.PanacheRepositoryResource;
 import io.quarkus.hibernate.reactive.rest.data.panache.runtime.RestDataPanacheExceptionMapper;
-import io.quarkus.rest.data.panache.RestDataPanacheException;
 import io.quarkus.rest.data.panache.deployment.ResourceMetadata;
 import io.quarkus.rest.data.panache.deployment.RestDataResourceBuildItem;
-import io.quarkus.resteasy.common.spi.ResteasyJaxrsProviderBuildItem;
-import io.quarkus.resteasy.reactive.spi.ExceptionMapperBuildItem;
+import io.quarkus.resteasy.reactive.spi.CustomExceptionMapperBuildItem;
 
 class HibernateOrmPanacheRestProcessor {
 
@@ -43,14 +39,9 @@ class HibernateOrmPanacheRestProcessor {
     }
 
     @BuildStep
-    void registerRestDataPanacheExceptionMapper(
-            BuildProducer<ResteasyJaxrsProviderBuildItem> resteasyJaxrsProviderBuildItemBuildProducer,
-            BuildProducer<ExceptionMapperBuildItem> exceptionMapperBuildItemBuildProducer) {
-        resteasyJaxrsProviderBuildItemBuildProducer
-                .produce(new ResteasyJaxrsProviderBuildItem(RestDataPanacheExceptionMapper.class.getName()));
-        exceptionMapperBuildItemBuildProducer
-                .produce(new ExceptionMapperBuildItem(RestDataPanacheExceptionMapper.class.getName(),
-                        RestDataPanacheException.class.getName(), Priorities.USER + 100, false));
+    void registerRestDataPanacheExceptionMapper(BuildProducer<CustomExceptionMapperBuildItem> customExceptionMappers) {
+        customExceptionMappers
+                .produce(new CustomExceptionMapperBuildItem(RestDataPanacheExceptionMapper.class.getName()));
     }
 
     /**
