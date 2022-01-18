@@ -9,7 +9,7 @@ public abstract class AbstractItem<IdType extends Number> extends AbstractEntity
 
     private String name;
 
-    @ManyToOne(optional = false)
+    @ManyToOne
     private Collection collection;
 
     public String getName() {

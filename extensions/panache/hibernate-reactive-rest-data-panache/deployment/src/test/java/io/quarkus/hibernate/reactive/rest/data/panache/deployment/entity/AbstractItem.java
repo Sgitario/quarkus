@@ -9,7 +9,7 @@ public abstract class AbstractItem<IdType extends Number> extends AbstractEntity
 
     public String name;
 
-    @ManyToOne(optional = false)
+    @ManyToOne
     public Collection collection;
 
     @JsonbTransient // Avoid infinite loop when serializing
