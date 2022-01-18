@@ -23,12 +23,10 @@ public abstract class AbstractPostMethodTest {
                 .when().post("/items")
                 .thenReturn();
         assertThat(response.statusCode()).isEqualTo(201);
-        // resteasy reactive links is unsupported yet
-        // assertThat(response.header("Location")).isNotBlank();
-        // String id = response.header("Location").substring(response.header("Location").lastIndexOf("/") + 1);
+        assertThat(response.header("Location")).isNotBlank();
+        String id = response.header("Location").substring(response.header("Location").lastIndexOf("/") + 1);
         JsonPath body = response.body().jsonPath();
-        // assertThat(body.getString("id")).isEqualTo(id);
-        assertThat(body.getString("id")).isNotEmpty();
+        assertThat(body.getString("id")).isEqualTo(id);
         assertThat(body.getString("name")).isEqualTo("test-simple");
     }
 
@@ -60,8 +58,7 @@ public abstract class AbstractPostMethodTest {
                 .and().body("{\"id\": \"test-complex\", \"name\": \"test collection\"}")
                 .when().post("/collections")
                 .then().statusCode(201)
-                // resteasy reactive links is unsupported yet
-                // .and().header("Location", endsWith("/test-complex"))
+                .and().header("Location", endsWith("/test-complex"))
                 .and().body("id", is(equalTo("test-complex")))
                 .and().body("name", is(equalTo("test collection")))
                 .and().body("items", is(empty()));

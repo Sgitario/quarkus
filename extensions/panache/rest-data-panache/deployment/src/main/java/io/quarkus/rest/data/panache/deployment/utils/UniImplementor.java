@@ -7,6 +7,9 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import org.jboss.resteasy.reactive.server.core.CurrentRequestManager;
+import org.jboss.resteasy.reactive.server.core.ResteasyReactiveRequestContext;
+
 import io.quarkus.gizmo.BytecodeCreator;
 import io.quarkus.gizmo.FunctionCreator;
 import io.quarkus.gizmo.MethodDescriptor;
@@ -34,9 +37,15 @@ public final class UniImplementor {
      */
     public static ResultHandle map(BytecodeCreator creator, ResultHandle uniInstance, String messageOnFailure,
             BiConsumer<BytecodeCreator, ResultHandle> function) {
+        ResultHandle rrContext = creator
+                .invokeStaticMethod(ofMethod(CurrentRequestManager.class, "get", ResteasyReactiveRequestContext.class));
+
         FunctionCreator lambda = creator.createFunction(Function.class);
         BytecodeCreator body = lambda.getBytecode();
         ResultHandle item = body.getMethodParam(0);
+        body.invokeStaticMethod(ofMethod(CurrentRequestManager.class, "set", void.class, ResteasyReactiveRequestContext.class),
+                rrContext);
+
         function.accept(body, item);
 
         ResultHandle resultHandle = creator.invokeInterfaceMethod(ofMethod(Uni.class, "map", Uni.class, Function.class),
@@ -51,9 +60,13 @@ public final class UniImplementor {
      */
     public static ResultHandle flatMap(BytecodeCreator creator, ResultHandle uniInstance, String messageOnFailure,
             BiConsumer<BytecodeCreator, ResultHandle> function) {
+        ResultHandle rrContext = creator
+                .invokeStaticMethod(ofMethod(CurrentRequestManager.class, "get", ResteasyReactiveRequestContext.class));
         FunctionCreator lambda = creator.createFunction(Function.class);
         BytecodeCreator body = lambda.getBytecode();
         ResultHandle item = body.getMethodParam(0);
+        body.invokeStaticMethod(ofMethod(CurrentRequestManager.class, "set", void.class, ResteasyReactiveRequestContext.class),
+                rrContext);
         function.accept(body, item);
 
         ResultHandle resultHandle = creator.invokeInterfaceMethod(ofMethod(Uni.class, "flatMap", Uni.class, Function.class),
