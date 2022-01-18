@@ -18,8 +18,8 @@ import io.quarkus.rest.data.panache.runtime.hal.HalEntityWrapper;
  */
 abstract class HalMethodImplementor extends StandardMethodImplementor {
 
-    HalMethodImplementor(boolean isResteasyClassic) {
-        super(isResteasyClassic);
+    HalMethodImplementor(boolean isResteasyClassic, boolean hasLinksEnabled) {
+        super(isResteasyClassic, hasLinksEnabled);
     }
 
     /**
@@ -28,7 +28,7 @@ abstract class HalMethodImplementor extends StandardMethodImplementor {
     @Override
     public void implement(ClassCreator classCreator, ResourceMetadata resourceMetadata,
             ResourceProperties resourceProperties, FieldDescriptor resourceField) {
-        if (resourceProperties.isHal() && resourceProperties.isExposed(getResourceMethodName())) {
+        if (resourceProperties.isHal() && resourceProperties.isExposed(getResourceMethodName()) && isResteasyClassic()) {
             implementInternal(classCreator, resourceMetadata, resourceProperties, resourceField);
         }
     }

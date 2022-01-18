@@ -23,8 +23,8 @@ public final class AddHalMethodImplementor extends HalMethodImplementor {
 
     private final boolean withValidation;
 
-    public AddHalMethodImplementor(boolean withValidation, boolean isResteasyClassic) {
-        super(isResteasyClassic);
+    public AddHalMethodImplementor(boolean withValidation, boolean isResteasyClassic, boolean hasLinksEnabled) {
+        super(isResteasyClassic, hasLinksEnabled);
         this.withValidation = withValidation;
     }
 

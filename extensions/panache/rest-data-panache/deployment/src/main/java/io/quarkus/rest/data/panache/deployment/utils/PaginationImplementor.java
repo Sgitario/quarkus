@@ -27,6 +27,12 @@ public final class PaginationImplementor {
 
     public static final int DEFAULT_PAGE_SIZE = 20;
 
+    private final boolean isResteasyClassic;
+
+    public PaginationImplementor(boolean isResteasyClassic) {
+        this.isResteasyClassic = isResteasyClassic;
+    }
+
     /**
      * Get a {@link Page} instance give an index and size.
      */

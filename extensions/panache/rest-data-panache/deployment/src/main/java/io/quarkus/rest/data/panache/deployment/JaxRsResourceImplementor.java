@@ -35,17 +35,17 @@ class JaxRsResourceImplementor {
 
     private final List<MethodImplementor> methodImplementors;
 
-    JaxRsResourceImplementor(boolean withValidation, boolean isResteasyClassic) {
+    JaxRsResourceImplementor(boolean withValidation, boolean isResteasyClassic, boolean hasLinksEnabled) {
         this.methodImplementors = Arrays.asList(
-                new GetMethodImplementor(isResteasyClassic),
-                new GetHalMethodImplementor(isResteasyClassic),
-                new ListMethodImplementor(isResteasyClassic),
-                new ListHalMethodImplementor(isResteasyClassic),
-                new AddMethodImplementor(withValidation, isResteasyClassic),
-                new AddHalMethodImplementor(withValidation, isResteasyClassic),
-                new UpdateMethodImplementor(withValidation, isResteasyClassic),
-                new UpdateHalMethodImplementor(withValidation, isResteasyClassic),
-                new DeleteMethodImplementor(isResteasyClassic));
+                new GetMethodImplementor(isResteasyClassic, hasLinksEnabled),
+                new GetHalMethodImplementor(isResteasyClassic, hasLinksEnabled),
+                new ListMethodImplementor(isResteasyClassic, hasLinksEnabled),
+                new ListHalMethodImplementor(isResteasyClassic, hasLinksEnabled),
+                new AddMethodImplementor(withValidation, isResteasyClassic, hasLinksEnabled),
+                new AddHalMethodImplementor(withValidation, isResteasyClassic, hasLinksEnabled),
+                new UpdateMethodImplementor(withValidation, isResteasyClassic, hasLinksEnabled),
+                new UpdateHalMethodImplementor(withValidation, isResteasyClassic, hasLinksEnabled),
+                new DeleteMethodImplementor(isResteasyClassic, hasLinksEnabled));
     }
 
     /**

@@ -51,6 +51,7 @@ public interface Capability {
 
     String RESTEASY_MUTINY = RESTEASY + ".mutiny";
     String RESTEASY_REACTIVE = RESTEASY + ".reactive";
+    String RESTEASY_REACTIVE_LINKS = RESTEASY_REACTIVE + ".links";
     String RESTEASY_REACTIVE_JSON = RESTEASY_REACTIVE + ".json";
     String RESTEASY_REACTIVE_JSON_JACKSON = RESTEASY_REACTIVE_JSON + ".jackson";
     String RESTEASY_REACTIVE_JSON_JSONB = RESTEASY_REACTIVE_JSON + ".jsonb";

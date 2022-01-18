@@ -20,10 +20,12 @@ import io.quarkus.gizmo.BytecodeCreator;
 import io.quarkus.gizmo.CatchBlockCreator;
 import io.quarkus.gizmo.ClassCreator;
 import io.quarkus.gizmo.FieldDescriptor;
+import io.quarkus.gizmo.ResultHandle;
 import io.quarkus.gizmo.TryBlock;
 import io.quarkus.rest.data.panache.RestDataPanacheException;
 import io.quarkus.rest.data.panache.deployment.ResourceMetadata;
 import io.quarkus.rest.data.panache.deployment.properties.ResourceProperties;
+import io.quarkus.rest.data.panache.deployment.utils.ResponseImplementor;
 import io.quarkus.rest.data.panache.runtime.sort.SortQueryParamValidator;
 
 /**
@@ -34,9 +36,11 @@ public abstract class StandardMethodImplementor implements MethodImplementor {
     private static final Logger LOGGER = Logger.getLogger(StandardMethodImplementor.class);
 
     private final boolean isResteasyClassic;
+    private final boolean hasLinksEnabled;
 
-    protected StandardMethodImplementor(boolean isResteasyClassic) {
+    protected StandardMethodImplementor(boolean isResteasyClassic, boolean hasLinksEnabled) {
         this.isResteasyClassic = isResteasyClassic;
+        this.hasLinksEnabled = hasLinksEnabled;
     }
 
     /**
@@ -86,6 +90,10 @@ public abstract class StandardMethodImplementor implements MethodImplementor {
     }
 
     protected void addLinksAnnotation(AnnotatedElement element, String entityClassName, String rel) {
+        if (!hasLinksEnabled) {
+            return;
+        }
+
         if (isResteasyClassic) {
             AnnotationCreator linkResource = element.addAnnotation("org.jboss.resteasy.links.LinkResource");
             linkResource.addValue("entityClassName", entityClassName);
@@ -143,5 +151,13 @@ public abstract class StandardMethodImplementor implements MethodImplementor {
             suffix = suffix.substring(1);
         }
         return String.join("/", path, suffix);
+    }
+
+    protected ResultHandle resourceCreated(BytecodeCreator creator, ResultHandle resource) {
+        return ResponseImplementor.created(creator, resource, hasLinksEnabled);
+    }
+
+    protected boolean isResteasyClassic() {
+        return isResteasyClassic;
     }
 }

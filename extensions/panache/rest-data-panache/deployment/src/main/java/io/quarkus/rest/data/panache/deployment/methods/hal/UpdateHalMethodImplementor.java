@@ -36,8 +36,8 @@ public final class UpdateHalMethodImplementor extends HalMethodImplementor {
 
     private final boolean withValidation;
 
-    public UpdateHalMethodImplementor(boolean withValidation, boolean isResteasyClassic) {
-        super(isResteasyClassic);
+    public UpdateHalMethodImplementor(boolean withValidation, boolean isResteasyClassic, boolean hasLinksEnabled) {
+        super(isResteasyClassic, hasLinksEnabled);
         this.withValidation = withValidation;
     }
 

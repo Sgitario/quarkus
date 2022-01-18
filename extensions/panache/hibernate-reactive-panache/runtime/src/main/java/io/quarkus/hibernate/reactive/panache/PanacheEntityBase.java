@@ -60,6 +60,18 @@ public abstract class PanacheEntityBase {
 
     /**
      * Persist this entity in the database, if not already persisted. This will set your ID field if it is not already set.
+     *
+     * @return
+     *
+     * @see Mutiny.Session#merge(Object)
+     */
+    @CheckReturnValue
+    public <T extends PanacheEntityBase> Uni<T> merge() {
+        return getSession().flatMap(session -> (Uni<T>) session.merge(this));
+    }
+
+    /**
+     * Persist this entity in the database, if not already persisted. This will set your ID field if it is not already set.
      * Then flushes all pending changes to the database.
      * 
      * @return

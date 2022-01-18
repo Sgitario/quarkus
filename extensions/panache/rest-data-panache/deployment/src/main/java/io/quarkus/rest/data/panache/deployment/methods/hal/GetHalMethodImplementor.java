@@ -21,8 +21,8 @@ public final class GetHalMethodImplementor extends HalMethodImplementor {
 
     private static final String RESOURCE_METHOD_NAME = "get";
 
-    public GetHalMethodImplementor(boolean isResteasyClassic) {
-        super(isResteasyClassic);
+    public GetHalMethodImplementor(boolean isResteasyClassic, boolean hasLinksEnabled) {
+        super(isResteasyClassic, hasLinksEnabled);
     }
 
     /**

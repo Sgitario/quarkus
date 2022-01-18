@@ -56,6 +56,18 @@ public interface PanacheRepositoryBase<Entity, Id> {
     }
 
     /**
+     * Persist this entity in the database, if not already persisted. This will set your ID field if it is not already set.
+     *
+     * @return
+     *
+     * @see Mutiny.Session#merge(Object)
+     */
+    @CheckReturnValue
+    public default Uni<Entity> merge(Entity entity) {
+        return getSession().flatMap(session -> session.merge(entity));
+    }
+
+    /**
      * Persist the given entity in the database, if not already persisted.
      * Then flushes all pending changes to the database.
      *

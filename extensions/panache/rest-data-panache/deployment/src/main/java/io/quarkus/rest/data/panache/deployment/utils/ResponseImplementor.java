@@ -34,8 +34,19 @@ public final class ResponseImplementor {
         return creator.invokeVirtualMethod(ofMethod(ResponseBuilder.class, "build", Response.class), builder);
     }
 
+    public static ResultHandle created(BytecodeCreator creator, ResultHandle entity, boolean hasLinksEnabled) {
+        if (hasLinksEnabled) {
+            return created(creator, entity, getEntityUrl(creator, entity));
+        }
+
+        return created(creator, entity);
+    }
+
     public static ResultHandle created(BytecodeCreator creator, ResultHandle entity) {
-        return created(creator, entity, getEntityUrl(creator, entity));
+        ResultHandle builder = getResponseBuilder(creator, Response.Status.CREATED.getStatusCode());
+        creator.invokeVirtualMethod(
+                ofMethod(ResponseBuilder.class, "entity", ResponseBuilder.class, Object.class), builder, entity);
+        return creator.invokeVirtualMethod(ofMethod(ResponseBuilder.class, "build", Response.class), builder);
     }
 
     public static ResultHandle created(BytecodeCreator creator, ResultHandle entity, ResultHandle location) {

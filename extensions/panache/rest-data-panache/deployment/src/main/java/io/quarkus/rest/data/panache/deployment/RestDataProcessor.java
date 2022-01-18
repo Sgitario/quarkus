@@ -83,11 +83,13 @@ public class RestDataProcessor {
             BuildProducer<GeneratedJaxRsResourceBuildItem> resteasyReactiveImplementationsProducer) {
 
         boolean isResteasyClassic = capabilities.isPresent(Capability.RESTEASY);
+        // Always enabled in Resteasy Classic and conditionally enabled in Resteasy Reactive
+        boolean hasLinksEnabled = isResteasyClassic || capabilities.isPresent(Capability.RESTEASY_REACTIVE_LINKS);
 
         ClassOutput classOutput = isResteasyClassic ? new GeneratedBeanGizmoAdaptor(resteasyClassicImplementationsProducer)
                 : new GeneratedJaxRsResourceGizmoAdaptor(resteasyReactiveImplementationsProducer);
         JaxRsResourceImplementor jaxRsResourceImplementor = new JaxRsResourceImplementor(hasValidatorCapability(capabilities),
-                isResteasyClassic);
+                isResteasyClassic, hasLinksEnabled);
         ResourcePropertiesProvider resourcePropertiesProvider = new ResourcePropertiesProvider(index.getIndex());
 
         for (RestDataResourceBuildItem resourceBuildItem : resourceBuildItems) {

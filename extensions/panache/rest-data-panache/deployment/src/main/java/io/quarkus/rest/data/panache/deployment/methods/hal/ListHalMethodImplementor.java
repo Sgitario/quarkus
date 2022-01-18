@@ -32,12 +32,13 @@ public final class ListHalMethodImplementor extends HalMethodImplementor {
 
     private static final String RESOURCE_METHOD_NAME = "list";
 
-    private final PaginationImplementor paginationImplementor = new PaginationImplementor();
+    private final PaginationImplementor paginationImplementor;
 
     private final SortImplementor sortImplementor = new SortImplementor();
 
-    public ListHalMethodImplementor(boolean isResteasyClassic) {
-        super(isResteasyClassic);
+    public ListHalMethodImplementor(boolean isResteasyClassic, boolean hasLinksEnabled) {
+        super(isResteasyClassic, hasLinksEnabled);
+        this.paginationImplementor = new PaginationImplementor(isResteasyClassic);
     }
 
     /**
