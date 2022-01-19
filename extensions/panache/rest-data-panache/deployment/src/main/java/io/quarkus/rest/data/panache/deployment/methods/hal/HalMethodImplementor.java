@@ -28,7 +28,7 @@ abstract class HalMethodImplementor extends StandardMethodImplementor {
     @Override
     public void implement(ClassCreator classCreator, ResourceMetadata resourceMetadata,
             ResourceProperties resourceProperties, FieldDescriptor resourceField) {
-        if (resourceProperties.isHal() && resourceProperties.isExposed(getResourceMethodName()) && isResteasyClassic()) {
+        if (resourceProperties.isHal() && resourceProperties.isExposed(getResourceMethodName())) {
             implementInternal(classCreator, resourceMetadata, resourceProperties, resourceField);
         }
     }
