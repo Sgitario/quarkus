@@ -142,9 +142,6 @@ public final class AddHalMethodImplementor extends HalMethodImplementor {
                     MethodDescriptor.ofMethod(InstanceHandle.class, "get", Object.class),
                     instance);
 
-            methodCreator.invokeInterfaceMethod(
-                    ofMethod(ResourceLinksProvider.class, "init", void.class), linksProvider);
-
             ResultHandle uniEntity = methodCreator.invokeVirtualMethod(
                     ofMethod(resourceMetadata.getResourceClass(), RESOURCE_METHOD_NAME, Uni.class, Object.class),
                     resource, entityToSave);
