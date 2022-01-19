@@ -7,7 +7,6 @@ import static org.hamcrest.Matchers.endsWith;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import io.restassured.path.json.JsonPath;
@@ -30,7 +29,6 @@ public abstract class AbstractPostMethodTest {
         assertThat(body.getString("name")).isEqualTo("test-simple");
     }
 
-    @Disabled("Unsupported yet")
     @Test
     void shouldCreateSimpleHalObject() {
         Response response = given().accept("application/hal+json")
@@ -69,7 +67,6 @@ public abstract class AbstractPostMethodTest {
                 .then().statusCode(409);
     }
 
-    @Disabled("Unsupported yet")
     @Test
     void shouldCreateComplexHalObjects() {
         given().accept("application/hal+json")
