@@ -19,12 +19,16 @@ import io.quarkus.gizmo.FieldDescriptor;
 import io.quarkus.rest.data.panache.deployment.methods.AddMethodImplementor;
 import io.quarkus.rest.data.panache.deployment.methods.CountMethodImplementor;
 import io.quarkus.rest.data.panache.deployment.methods.DeleteMethodImplementor;
+import io.quarkus.rest.data.panache.deployment.methods.GetMethodForSubResourceImplementor;
 import io.quarkus.rest.data.panache.deployment.methods.GetMethodImplementor;
 import io.quarkus.rest.data.panache.deployment.methods.ListMethodImplementor;
-import io.quarkus.rest.data.panache.deployment.methods.MethodImplementor;
+import io.quarkus.rest.data.panache.deployment.methods.StandardMethodImplementor;
+import io.quarkus.rest.data.panache.deployment.methods.SubResourceMethodImplementor;
 import io.quarkus.rest.data.panache.deployment.methods.UpdateMethodImplementor;
 import io.quarkus.rest.data.panache.deployment.methods.hal.ListHalMethodImplementor;
 import io.quarkus.rest.data.panache.deployment.properties.ResourceProperties;
+import io.quarkus.rest.data.panache.deployment.properties.SubResourceProperties;
+import io.quarkus.rest.data.panache.deployment.utils.EntityClassHelper;
 import io.quarkus.runtime.util.HashUtil;
 
 /**
@@ -35,9 +39,11 @@ class JaxRsResourceImplementor {
     private static final Logger LOGGER = Logger.getLogger(JaxRsResourceImplementor.class);
     private static final String OPENAPI_TAG_ANNOTATION = "org.eclipse.microprofile.openapi.annotations.tags.Tag";
 
-    private final List<MethodImplementor> methodImplementors;
+    private final List<StandardMethodImplementor> methodImplementors;
+    private final List<SubResourceMethodImplementor> subResourceMethodImplementors;
 
-    JaxRsResourceImplementor(boolean withValidation, boolean isResteasyClassic, boolean isReactivePanache) {
+    JaxRsResourceImplementor(EntityClassHelper entityClassHelper, boolean withValidation, boolean isResteasyClassic,
+            boolean isReactivePanache) {
         this.methodImplementors = Arrays.asList(new GetMethodImplementor(isResteasyClassic, isReactivePanache),
                 new ListMethodImplementor(isResteasyClassic, isReactivePanache),
                 new CountMethodImplementor(isResteasyClassic, isReactivePanache),
@@ -47,6 +53,9 @@ class JaxRsResourceImplementor {
                 // The list hal endpoint needs to be added for both resteasy classic and resteasy reactive
                 // because the pagination links are programmatically added.
                 new ListHalMethodImplementor(isResteasyClassic, isReactivePanache));
+
+        this.subResourceMethodImplementors = Arrays
+                .asList(new GetMethodForSubResourceImplementor(entityClassHelper, isResteasyClassic, isReactivePanache));
     }
 
     /**
@@ -76,6 +85,9 @@ class JaxRsResourceImplementor {
         implementClassAnnotations(classCreator, resourceMetadata, resourceProperties, capabilities);
         FieldDescriptor resourceField = implementResourceField(classCreator, resourceMetadata);
         implementMethods(classCreator, resourceMetadata, resourceProperties, resourceField);
+        for (SubResourceProperties subResourceProperties : resourceProperties.getSubResourceProperties()) {
+            implementMethodsForSubResource(classCreator, resourceMetadata, subResourceProperties, resourceField);
+        }
 
         classCreator.close();
         LOGGER.tracef("Completed generation of '%s'", controllerClassName);
@@ -99,8 +111,15 @@ class JaxRsResourceImplementor {
 
     private void implementMethods(ClassCreator classCreator, ResourceMetadata resourceMetadata,
             ResourceProperties resourceProperties, FieldDescriptor resourceField) {
-        for (MethodImplementor methodImplementor : methodImplementors) {
+        for (StandardMethodImplementor methodImplementor : methodImplementors) {
             methodImplementor.implement(classCreator, resourceMetadata, resourceProperties, resourceField);
+        }
+    }
+
+    private void implementMethodsForSubResource(ClassCreator classCreator, ResourceMetadata resourceMetadata,
+            SubResourceProperties subResourceProperties, FieldDescriptor resourceField) {
+        for (SubResourceMethodImplementor subResourceMethodImplementor : subResourceMethodImplementors) {
+            subResourceMethodImplementor.implement(classCreator, resourceMetadata, subResourceProperties, resourceField);
         }
     }
 }

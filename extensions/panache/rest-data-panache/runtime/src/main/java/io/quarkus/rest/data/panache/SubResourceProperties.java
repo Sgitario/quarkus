@@ -8,20 +8,17 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
 
 /**
- * An optional annotation to customize generated JAX-RS resource.
+ * An annotation to expose sub-resources as part of a generated JAX-RS resource.
  */
 @Documented
 @Retention(RUNTIME)
-@Target({ TYPE })
-public @interface ResourceProperties {
-
+@Target(TYPE)
+public @interface SubResourceProperties {
     /**
-     * Whether this resource operations should be exposed as JAX-RS methods by default.
-     * Separate methods can override this setting by using {@link MethodProperties} annotation.
-     * <p>
-     * Default: true.
+     * Name of the sub-resource to expose.
+     * This name should match to a field of the parent resource.
      */
-    boolean exposed() default true;
+    String of();
 
     /**
      * URL path segment that should be used to access the resources.
@@ -57,9 +54,4 @@ public @interface ResourceProperties {
      * Default: hyphenated resource name without a suffix. Ignored suffixes are `Controller` and `Resource`.
      */
     String halCollectionName() default "";
-
-    /**
-     * Expose sub resources that are part of the current entity.
-     */
-    SubResourceProperties[] subResources() default {};
 }

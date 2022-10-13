@@ -20,6 +20,7 @@ import io.quarkus.gizmo.ResultHandle;
 import io.quarkus.panache.common.Page;
 import io.quarkus.panache.common.Sort;
 import io.quarkus.rest.data.panache.deployment.Constants;
+import io.quarkus.rest.data.panache.deployment.utils.EntityClassHelper;
 import io.quarkus.runtime.util.HashUtil;
 
 /**
@@ -42,7 +43,7 @@ class ResourceImplementor {
      * Instances of this class are registered as beans and are later used in the generated JAX-RS controllers.
      */
     String implement(ClassOutput classOutput, DataAccessImplementor dataAccessImplementor, String resourceType,
-            String entityType) {
+            String entityType, List<FieldInfo> subResources) {
         String className = resourceType + "Impl_" + HashUtil.sha1(resourceType);
         LOGGER.tracef("Starting generation of '%s'", className);
         ClassCreator classCreator = ClassCreator.builder()
@@ -59,6 +60,9 @@ class ResourceImplementor {
         implementAdd(classCreator, dataAccessImplementor);
         implementUpdate(classCreator, dataAccessImplementor, entityType);
         implementDelete(classCreator, dataAccessImplementor);
+        for (FieldInfo subResource : subResources) {
+            implementSubResource(classCreator, dataAccessImplementor, subResource, entityType);
+        }
 
         classCreator.close();
         LOGGER.tracef("Completed generation of '%s'", className);
@@ -132,6 +136,30 @@ class ResourceImplementor {
         methodCreator.addAnnotation(Transactional.class);
         ResultHandle id = methodCreator.getMethodParam(0);
         methodCreator.returnValue(dataAccessImplementor.deleteById(methodCreator, id));
+        methodCreator.close();
+    }
+
+    private void implementSubResource(ClassCreator classCreator, DataAccessImplementor dataAccessImplementor,
+            FieldInfo subResourceField, String entityType) {
+        implementListSubResource(subResourceField, classCreator, dataAccessImplementor, entityType);
+    }
+
+    private void implementListSubResource(FieldInfo subResourceField, ClassCreator classCreator,
+            DataAccessImplementor dataAccessImplementor, String entityType) {
+        String fieldName = subResourceField.name();
+        String effectiveType = entityClassHelper.getEffectiveType(subResourceField.type()).toString();
+        MethodCreator methodCreator = classCreator.getMethodCreator("list" + fieldName, List.class,
+                Object.class, Object.class);
+        FieldInfo idFieldOfResource = entityClassHelper.getIdField(entityType);
+        FieldInfo idFieldOfSubResource = entityClassHelper.getIdField(effectiveType);
+        ResultHandle resourceId = methodCreator.getMethodParam(0);
+        ResultHandle subResourceId = methodCreator.getMethodParam(1);
+        String query = "select distinct sub from " + entityType + " as res "
+                + "inner join res." + fieldName + " sub "
+                + "where res." + idFieldOfResource.name() + "=?1 "
+                + "and sub." + idFieldOfSubResource.name() + "=?2";
+
+        methodCreator.returnValue(dataAccessImplementor.find(methodCreator, query, resourceId, subResourceId));
         methodCreator.close();
     }
 

@@ -143,7 +143,7 @@ public final class UpdateMethodImplementor extends StandardMethodImplementor {
         addPutAnnotation(methodCreator);
         addPathParamAnnotation(methodCreator.getParameterAnnotations(0), "id");
         addConsumesAnnotation(methodCreator, APPLICATION_JSON);
-        addProducesJsonAnnotation(methodCreator, resourceProperties);
+        addProducesJsonAnnotation(methodCreator, resourceProperties.isHal());
         addLinksAnnotation(methodCreator, resourceMetadata.getEntityType(), REL);
         // Add parameter annotations
         if (withValidation) {

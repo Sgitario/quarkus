@@ -1,5 +1,6 @@
 package io.quarkus.rest.data.panache.deployment.properties;
 
+import java.util.List;
 import java.util.Map;
 
 public class ResourceProperties {
@@ -16,14 +17,17 @@ public class ResourceProperties {
 
     private final Map<String, MethodProperties> methodProperties;
 
+    private final List<SubResourceProperties> subResourceProperties;
+
     public ResourceProperties(boolean exposed, String path, boolean paged, boolean hal, String halCollectionName,
-            Map<String, MethodProperties> methodProperties) {
+            Map<String, MethodProperties> methodProperties, List<SubResourceProperties> subResourceProperties) {
         this.exposed = exposed;
         this.path = path;
         this.paged = paged;
         this.hal = hal;
         this.halCollectionName = halCollectionName;
         this.methodProperties = methodProperties;
+        this.subResourceProperties = subResourceProperties;
     }
 
     public boolean isExposed() {
@@ -67,5 +71,9 @@ public class ResourceProperties {
 
     public String getHalCollectionName() {
         return halCollectionName;
+    }
+
+    public List<SubResourceProperties> getSubResourceProperties() {
+        return subResourceProperties;
     }
 }

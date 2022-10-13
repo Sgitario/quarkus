@@ -59,7 +59,7 @@ public final class GetMethodImplementor extends StandardMethodImplementor {
      * }
      * </pre>
      *
-     * The RESTEasy Reactive version exposes {@link io.quarkus.rest.data.panache.ReactiveRestDataResource#delete(Object)}
+     * The RESTEasy Reactive version exposes {@link io.quarkus.rest.data.panache.ReactiveRestDataResource#get(Object)}
      * and the generated code looks more or less like this:
      *
      * <pre>
@@ -89,7 +89,7 @@ public final class GetMethodImplementor extends StandardMethodImplementor {
         // Add method annotations
         addPathAnnotation(methodCreator, appendToPath(resourceProperties.getPath(RESOURCE_METHOD_NAME), "{id}"));
         addGetAnnotation(methodCreator);
-        addProducesJsonAnnotation(methodCreator, resourceProperties);
+        addProducesJsonAnnotation(methodCreator, resourceProperties.isHal());
 
         addPathParamAnnotation(methodCreator.getParameterAnnotations(0), "id");
         addLinksAnnotation(methodCreator, resourceMetadata.getEntityType(), REL);

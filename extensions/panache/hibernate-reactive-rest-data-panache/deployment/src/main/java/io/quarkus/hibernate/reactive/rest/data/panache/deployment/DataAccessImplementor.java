@@ -7,6 +7,14 @@ import io.quarkus.gizmo.ResultHandle;
  * Implement data access logic for a specific data access strategy.
  */
 public interface DataAccessImplementor {
+    /**
+     * Find the entities matching the provided query.
+     *
+     * @param creator Bytecode creator that should be used for implementation.
+     * @param query The query to find the entities.
+     * @return An instance of PanacheQuery.
+     */
+    ResultHandle find(BytecodeCreator creator, String query, ResultHandle... params);
 
     /**
      * Find an entity by ID and return a result.

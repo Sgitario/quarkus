@@ -1,12 +1,21 @@
 package io.quarkus.hibernate.reactive.rest.data.panache.deployment;
 
 import static io.quarkus.deployment.Feature.HIBERNATE_REACTIVE_REST_DATA_PANACHE;
+import static io.quarkus.rest.data.panache.deployment.properties.ResourcePropertiesProvider.RESOURCE_PROPERTIES_ANNOTATION;
+import static io.quarkus.rest.data.panache.deployment.properties.ResourcePropertiesProvider.RESOURCE_PROPERTIES_SUB_RESOURCES;
 
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+import org.jboss.jandex.AnnotationInstance;
+import org.jboss.jandex.AnnotationValue;
 import org.jboss.jandex.ClassInfo;
 import org.jboss.jandex.DotName;
+import org.jboss.jandex.FieldInfo;
 import org.jboss.jandex.IndexView;
 import org.jboss.jandex.Type;
 
@@ -23,6 +32,7 @@ import io.quarkus.hibernate.reactive.rest.data.panache.PanacheRepositoryResource
 import io.quarkus.hibernate.reactive.rest.data.panache.runtime.RestDataPanacheExceptionMapper;
 import io.quarkus.rest.data.panache.deployment.ResourceMetadata;
 import io.quarkus.rest.data.panache.deployment.RestDataResourceBuildItem;
+import io.quarkus.rest.data.panache.deployment.utils.EntityClassHelper;
 import io.quarkus.resteasy.reactive.spi.CustomExceptionMapperBuildItem;
 
 class HibernateReactivePanacheRestProcessor {
@@ -61,10 +71,12 @@ class HibernateReactivePanacheRestProcessor {
             String resourceInterface = classInfo.name().toString();
             String entityType = generics.get(0).name().toString();
             String idType = generics.get(1).name().toString();
+            List<FieldInfo> subResources = getSubResources(index.getIndex(),
+                    classInfo.annotation(RESOURCE_PROPERTIES_ANNOTATION), entityType);
 
             DataAccessImplementor dataAccessImplementor = new EntityDataAccessImplementor(entityType);
             String resourceClass = resourceImplementor.implement(
-                    classOutput, dataAccessImplementor, resourceInterface, entityType);
+                    classOutput, dataAccessImplementor, resourceInterface, entityType, subResources);
 
             restDataResourceProducer.produce(new RestDataResourceBuildItem(
                     new ResourceMetadata(resourceClass, resourceInterface, entityType, idType)));
@@ -90,10 +102,12 @@ class HibernateReactivePanacheRestProcessor {
             String repositoryClassName = generics.get(0).name().toString();
             String entityType = generics.get(1).name().toString();
             String idType = generics.get(2).name().toString();
+            List<FieldInfo> subResources = getSubResources(index.getIndex(),
+                    classInfo.annotation(RESOURCE_PROPERTIES_ANNOTATION), entityType);
 
             DataAccessImplementor dataAccessImplementor = new RepositoryDataAccessImplementor(repositoryClassName);
             String resourceClass = resourceImplementor.implement(
-                    classOutput, dataAccessImplementor, resourceInterface, entityType);
+                    classOutput, dataAccessImplementor, resourceInterface, entityType, subResources);
             // Make sure that repository bean is not removed and will be injected to the generated resource
             unremovableBeansProducer.produce(new UnremovableBeanBuildItem(
                     new UnremovableBeanBuildItem.BeanClassNameExclusion(repositoryClassName)));
@@ -115,6 +129,50 @@ class HibernateReactivePanacheRestProcessor {
         if (!index.getKnownDirectImplementors(classInfo.name()).isEmpty()) {
             throw new RuntimeException(classInfo.name() + " should not be extended or implemented");
         }
+    }
+
+    private List<FieldInfo> getSubResources(IndexView index, AnnotationInstance resourceProperties, String entityType) {
+        if (resourceProperties == null) {
+            return Collections.emptyList();
+        }
+
+        AnnotationValue subResourcesValue = resourceProperties.value(RESOURCE_PROPERTIES_SUB_RESOURCES);
+        if (subResourcesValue == null) {
+            return Collections.emptyList();
+        }
+
+        AnnotationInstance[] subResourcesArray = subResourcesValue.asNestedArray();
+        if (subResourcesArray == null || subResourcesArray.length == 0) {
+            return Collections.emptyList();
+        }
+
+        Map<String, FieldInfo> allFields = new HashMap<>();
+        ClassInfo currentClassInfo = index.getClassByName(entityType);
+        while (currentClassInfo != null) {
+            for (FieldInfo field : currentClassInfo.fields()) {
+                allFields.putIfAbsent(field.name(), field);
+            }
+
+            if (currentClassInfo.superName() != null) {
+                currentClassInfo = index.getClassByName(currentClassInfo.superName());
+            } else {
+                currentClassInfo = null;
+            }
+        }
+
+        List<FieldInfo> subResources = new ArrayList<>();
+        for (AnnotationInstance subResourceAnnotation : subResourcesArray) {
+            String subResourceName = subResourceAnnotation.value("of").asString();
+            FieldInfo field = allFields.get(subResourceName);
+            if (field == null) {
+                throw new IllegalStateException("Could not find field '" + subResourceName + "' in '" + entityType + "' to "
+                        + "expose this sub resource");
+            }
+
+            subResources.add(field);
+        }
+
+        return subResources;
     }
 
     private List<Type> getGenericTypes(ClassInfo classInfo) {

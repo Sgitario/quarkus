@@ -15,6 +15,7 @@ import io.quarkus.gizmo.ClassOutput;
 import io.quarkus.rest.data.panache.deployment.properties.ResourceProperties;
 import io.quarkus.rest.data.panache.deployment.properties.ResourcePropertiesBuildItem;
 import io.quarkus.rest.data.panache.deployment.properties.ResourcePropertiesProvider;
+import io.quarkus.rest.data.panache.deployment.utils.EntityClassHelper;
 import io.quarkus.rest.data.panache.runtime.sort.SortQueryParamFilter;
 import io.quarkus.rest.data.panache.runtime.sort.SortQueryParamValidator;
 import io.quarkus.resteasy.common.spi.ResteasyJaxrsProviderBuildItem;
@@ -65,14 +66,16 @@ public class RestDataProcessor {
 
         ClassOutput classOutput = isResteasyClassic ? new GeneratedBeanGizmoAdaptor(resteasyClassicImplementationsProducer)
                 : new GeneratedJaxRsResourceGizmoAdaptor(resteasyReactiveImplementationsProducer);
-        JaxRsResourceImplementor jaxRsResourceImplementor = new JaxRsResourceImplementor(hasValidatorCapability(capabilities),
+        JaxRsResourceImplementor jaxRsResourceImplementor = new JaxRsResourceImplementor(
+                new EntityClassHelper(index.getIndex()),
+                hasValidatorCapability(capabilities),
                 isResteasyClassic, isReactivePanache);
         ResourcePropertiesProvider resourcePropertiesProvider = new ResourcePropertiesProvider(index.getIndex());
 
         for (RestDataResourceBuildItem resourceBuildItem : resourceBuildItems) {
             ResourceMetadata resourceMetadata = resourceBuildItem.getResourceMetadata();
-            ResourceProperties resourceProperties = getResourceProperties(resourcePropertiesProvider,
-                    resourceMetadata, resourcePropertiesBuildItems);
+            ResourceProperties resourceProperties = getResourceProperties(resourcePropertiesProvider, resourceMetadata,
+                    resourcePropertiesBuildItems);
             if (resourceProperties.isHal()) {
                 if (isResteasyClassic && !hasAnyJsonCapabilityForResteasyClassic(capabilities)) {
                     throw new IllegalStateException("Cannot generate HAL endpoints without "

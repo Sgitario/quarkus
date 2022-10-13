@@ -24,6 +24,23 @@ final class EntityDataAccessImplementor implements DataAccessImplementor {
     }
 
     /**
+     * Implements <code>Entity.find(query, params)</code>
+     */
+    @Override
+    public ResultHandle find(BytecodeCreator creator, String query, ResultHandle... params) {
+        ResultHandle paramsArray = creator.newArray(Object.class, params.length);
+        for (int index = 0; index < params.length; index++) {
+            creator.writeArrayValue(paramsArray, index, params[index]);
+        }
+
+        ResultHandle panacheQuery = creator.invokeStaticMethod(ofMethod(entityClassName, "find", PanacheQuery.class,
+                String.class, Object[].class),
+                creator.load(query), paramsArray);
+
+        return creator.invokeInterfaceMethod(ofMethod(PanacheQuery.class, "list", Uni.class), panacheQuery);
+    }
+
+    /**
      * Implements <code>Entity.findById(id)</code>
      */
     @Override
