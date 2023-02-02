@@ -146,13 +146,14 @@ public class OpenshiftProcessor {
         }
 
         if (!capabilities.isPresent(Capability.CONTAINER_IMAGE_S2I)
-                && !capabilities.isPresent("io.quarkus.openshift")
+                && !capabilities.isPresent(Capability.OPENSHIFT)
                 && !capabilities.isPresent(Capability.CONTAINER_IMAGE_OPENSHIFT)) {
+            System.out.println("ADDED!!!! + " + image.get().getImage());
             configurators.produce(new ConfiguratorBuildItem(new DisableS2iConfigurator()));
 
-            image.ifPresent(i -> configurationSuppliers.produce(
-                    new ConfigurationSupplierBuildItem(
-                            new ApplyImageInfoConfigurationSupplier(i,
+            image.ifPresent(i -> configurators.produce(
+                    new ConfiguratorBuildItem(
+                            new ApplyImageInfoConfigurator(i,
                                     fallbackRegistry.map(f -> f.getRegistry()).orElse(DOCKERIO_REGISTRY)))));
         }
     }
@@ -306,7 +307,9 @@ public class OpenshiftProcessor {
                         new ApplyContainerImageDecorator(name, i.getName() + ":" + i.getTag())));
             });
         } else if (image.isPresent()) {
-            result.add(new DecoratorBuildItem(OPENSHIFT, new RemoveDockerImageStreamResourceDecorator(name)));
+            if (deploymentKind != DeploymentResourceKind.DeploymentConfig) {
+                result.add(new DecoratorBuildItem(OPENSHIFT, new RemoveDockerImageStreamResourceDecorator(name)));
+            }
             result.add(new DecoratorBuildItem(OPENSHIFT, new ApplyContainerImageDecorator(name, image.get().getImage())));
         }
 
