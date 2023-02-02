@@ -49,17 +49,17 @@ public class OpenshiftWithDockerAndImageTest {
             });
             assertThat(h).isInstanceOfSatisfying(DeploymentConfig.class, d -> {
                 Container container = d.getSpec().getTemplate().getSpec().getContainers().get(0);
-                assertThat(container.getImage()).isEqualTo(APP_NAME + ":1.0");
+                assertThat(container.getImage()).isEqualTo("app:1.0");
 
                 DeploymentTriggerImageChangeParams imageTriggerParams = d.getSpec().getTriggers().get(0).getImageChangeParams();
                 assertThat(imageTriggerParams.getFrom().getKind()).isEqualTo("ImageStreamTag");
-                assertThat(imageTriggerParams.getFrom().getName()).isEqualTo(APP_NAME + ":1.0");
+                assertThat(imageTriggerParams.getFrom().getName()).isEqualTo("app:1.0");
             });
         });
 
         assertThat(openshiftList).filteredOn(h -> "ImageStream".equals(h.getKind())).singleElement().satisfies(h -> {
             assertThat(h.getMetadata()).satisfies(m -> {
-                assertThat(m.getName()).isEqualTo(APP_NAME);
+                assertThat(m.getName()).isEqualTo("app");
             });
             assertThat(h).isInstanceOfSatisfying(ImageStream.class, i -> {
                 assertThat(i.getSpec().getDockerImageRepository()).isEqualTo("quay.io/user/app");
