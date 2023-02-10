@@ -1,15 +1,25 @@
 package io.quarkus.jaxb.deployment;
 
+import static io.quarkus.jaxb.deployment.utils.JaxbType.findExistingType;
+import static io.quarkus.jaxb.deployment.utils.JaxbType.isValidType;
+
 import java.io.IOError;
 import java.io.IOException;
 import java.lang.annotation.Annotation;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import jakarta.xml.bind.JAXBContext;
+import jakarta.xml.bind.JAXBException;
 import jakarta.xml.bind.annotation.XmlAccessOrder;
 import jakarta.xml.bind.annotation.XmlAccessorType;
 import jakarta.xml.bind.annotation.XmlAnyAttribute;
@@ -49,6 +59,7 @@ import org.jboss.jandex.AnnotationValue;
 import org.jboss.jandex.DotName;
 import org.jboss.jandex.IndexView;
 import org.jboss.jandex.Type;
+import org.jboss.logging.Logger;
 
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkus.deployment.ApplicationArchive;
@@ -66,10 +77,13 @@ import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveHierarchyIgnoreWarningBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.RuntimeInitializedClassBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ServiceProviderBuildItem;
+import io.quarkus.jaxb.deployment.utils.JaxbType;
 import io.quarkus.jaxb.runtime.JaxbContextConfigRecorder;
 import io.quarkus.jaxb.runtime.JaxbContextProducer;
 
-class JaxbProcessor {
+public class JaxbProcessor {
+
+    private static Logger LOG = Logger.getLogger(JaxbProcessor.class);
 
     private static final List<Class<? extends Annotation>> JAXB_ANNOTATIONS = List.of(
             XmlAccessorType.class,
@@ -290,9 +304,15 @@ class JaxbProcessor {
     @Record(ExecutionTime.STATIC_INIT)
     void setupJaxbContextConfig(List<JaxbClassesToBeBoundBuildItem> classesToBeBoundBuildItems,
             JaxbContextConfigRecorder jaxbContextConfig) {
+        Set<String> classNamesToBeBound = new HashSet<>();
         for (JaxbClassesToBeBoundBuildItem classesToBeBoundBuildItem : classesToBeBoundBuildItems) {
-            jaxbContextConfig.addClassesToBeBound(classesToBeBoundBuildItem.getClasses());
+            classNamesToBeBound.addAll(classesToBeBoundBuildItem.getClasses());
         }
+
+        Set<Class<?>> classes = getAllClassesFromClassNames(classNamesToBeBound);
+        removeClassesWithSameName(classes);
+        validateContext(classes);
+        jaxbContextConfig.addClassesToBeBound(classes);
     }
 
     @BuildStep
@@ -359,5 +379,67 @@ class JaxbProcessor {
 
     private void addResourceBundle(BuildProducer<NativeImageResourceBundleBuildItem> resourceBundle, String bundle) {
         resourceBundle.produce(new NativeImageResourceBundleBuildItem(bundle));
+    }
+
+    private void validateContext(Set<Class<?>> classes) {
+        try {
+            JAXBContext.newInstance(classes.toArray(new Class[0]));
+        } catch (JAXBException e) {
+            throw new IllegalStateException("Failed to configure JAXB context", e);
+        }
+    }
+
+    private Set<Class<?>> getAllClassesFromClassNames(Collection<String> classNames) {
+        Set<Class<?>> classes = new HashSet<>();
+        for (String className : classNames) {
+            Class<?> clazz = getClassByName(className);
+            if (isValidType(clazz)) {
+                classes.add(clazz);
+            }
+        }
+
+        return classes;
+    }
+
+    private void removeClassesWithSameName(Collection<Class<?>> classes) {
+        Map<String, Set<Class<?>>> collisions = findCollisions(classes);
+
+        // remove collisions altogether
+        for (Map.Entry<String, Set<Class<?>>> collision : collisions.entrySet()) {
+            LOG.warnf("The following classes won't be bound to the JAXB context because the type match with each other: "
+                    + "[%s]. To resolve these collisions, you need to provide different values on the `name` or "
+                    + "`namespace` fields using the `@XmlRootElement` or the `@XmlType` annotations into location "
+                    + "that causes this conflict.",
+                    collision.getValue().stream().map(Class::getName).collect(Collectors.joining(", ")));
+
+            classes.removeAll(collision.getValue());
+        }
+    }
+
+    private Map<String, Set<Class<?>>> findCollisions(Collection<Class<?>> classes) {
+        Set<JaxbType> dictionary = new HashSet<>();
+        Map<String, Set<Class<?>>> collisions = new HashMap<>();
+        for (Class<?> clazz : classes) {
+            JaxbType jaxbType = new JaxbType(clazz);
+            JaxbType existing = findExistingType(dictionary, jaxbType);
+            if (existing != null) {
+                // if it was already registered, then there is a collision
+                Set<Class<?>> classesInCollision = collisions.computeIfAbsent(jaxbType.getModelName(), n -> new HashSet<>());
+                classesInCollision.add(clazz);
+                classesInCollision.add(existing.getType());
+            } else {
+                dictionary.add(jaxbType);
+            }
+        }
+
+        return collisions;
+    }
+
+    private Class<?> getClassByName(String name) {
+        try {
+            return Class.forName(name, false, Thread.currentThread().getContextClassLoader());
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
     }
 }
