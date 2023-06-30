@@ -75,20 +75,20 @@ public class OpenshiftConfig implements PlatformConfiguration {
     /**
      * The name of the group this component belongs too
      */
-    @ConfigItem
+    @ConfigItem(defaultValue = "${quarkus.kubernetes.part-of}")
     Optional<String> partOf;
 
     /**
      * The name of the application. This value will be used for naming Kubernetes
      * resources like: 'Deployment', 'Service' and so on...
      */
-    @ConfigItem
+    @ConfigItem(defaultValue = "${quarkus.kubernetes.name}")
     Optional<String> name;
 
     /**
      * The version of the application.
      */
-    @ConfigItem
+    @ConfigItem(defaultValue = "${quarkus.kubernetes.version}")
     Optional<String> version;
 
     /**
@@ -100,7 +100,7 @@ public class OpenshiftConfig implements PlatformConfiguration {
      * (see https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/#context
      * for more details).
      */
-    @ConfigItem
+    @ConfigItem(defaultValue = "${quarkus.kubernetes.namespace}")
     Optional<String> namespace;
 
     /**
@@ -120,31 +120,31 @@ public class OpenshiftConfig implements PlatformConfiguration {
      * This is a very useful way to have manifests of successive builds of the same
      * application differ - thus ensuring that Kubernetes will apply the updated resources
      */
-    @ConfigItem(defaultValue = "true")
+    @ConfigItem(defaultValue = "${quarkus.kubernetes.add-build-timestamp}")
     boolean addBuildTimestamp;
 
     /**
      * Working directory
      */
-    @ConfigItem
+    @ConfigItem(defaultValue = "${quarkus.kubernetes.working-dir}")
     Optional<String> workingDir;
 
     /**
      * The commands
      */
-    @ConfigItem
+    @ConfigItem(defaultValue = "${quarkus.kubernetes.command}")
     Optional<List<String>> command;
 
     /**
      * The arguments
      */
-    @ConfigItem
+    @ConfigItem(defaultValue = "${quarkus.kubernetes.arguments}")
     Optional<List<String>> arguments;
 
     /**
      * The service account
      */
-    @ConfigItem
+    @ConfigItem(defaultValue = "${quarkus.kubernetes.service-account}")
     Optional<String> serviceAccount;
 
     /**
@@ -156,31 +156,31 @@ public class OpenshiftConfig implements PlatformConfiguration {
     /**
      * The number of desired pods
      */
-    @ConfigItem(defaultValue = "1")
+    @ConfigItem(defaultValue = "${quarkus.kubernetes.replicas}")
     Integer replicas;
 
     /**
      * The type of service that will be generated for the application
      */
-    @ConfigItem(defaultValue = "ClusterIP")
+    @ConfigItem(defaultValue = "${quarkus.kubernetes.service-type}")
     ServiceType serviceType;
 
     /**
      * The nodePort to set when serviceType is set to nodePort
      */
-    @ConfigItem
+    @ConfigItem(defaultValue = "${quarkus.kubernetes.node-port}")
     OptionalInt nodePort;
 
     /**
      * Image pull policy
      */
-    @ConfigItem(defaultValue = "Always")
+    @ConfigItem(defaultValue = "${quarkus.kubernetes.image-pull-policy}")
     ImagePullPolicy imagePullPolicy;
 
     /**
      * The image pull secret
      */
-    @ConfigItem
+    @ConfigItem(defaultValue = "${quarkus.kubernetes.image-pull-secrets}")
     Optional<List<String>> imagePullSecrets;
 
     /**

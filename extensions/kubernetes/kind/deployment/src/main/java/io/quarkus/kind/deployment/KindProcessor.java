@@ -89,7 +89,7 @@ public class KindProcessor {
     public List<ConfiguratorBuildItem> createConfigurators(KubernetesConfig config,
             List<KubernetesPortBuildItem> ports) {
         List<ConfiguratorBuildItem> result = new ArrayList<>();
-        KubernetesCommonHelper.combinePorts(ports, config).values()
+        KubernetesCommonHelper.combinePorts(ports, config.getPorts()).values()
                 .forEach(value -> result.add(new ConfiguratorBuildItem(new AddPortToKubernetesConfig(value))));
         return result;
     }

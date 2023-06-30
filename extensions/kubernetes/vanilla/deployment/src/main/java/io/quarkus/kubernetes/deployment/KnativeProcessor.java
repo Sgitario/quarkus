@@ -4,10 +4,12 @@ import static io.quarkus.kubernetes.deployment.Constants.KNATIVE;
 import static io.quarkus.kubernetes.deployment.Constants.KNATIVE_SERVICE;
 import static io.quarkus.kubernetes.deployment.Constants.KNATIVE_SERVICE_GROUP;
 import static io.quarkus.kubernetes.deployment.Constants.KNATIVE_SERVICE_VERSION;
+import static io.quarkus.kubernetes.deployment.KubernetesConfigUtil.defaultMapIfEmpty;
 import static io.quarkus.kubernetes.spi.KubernetesDeploymentTargetBuildItem.DEFAULT_PRIORITY;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -102,25 +104,39 @@ public class KnativeProcessor {
     }
 
     @BuildStep
-    public void createAnnotations(KnativeConfig config, BuildProducer<KubernetesAnnotationBuildItem> annotations) {
-        config.getAnnotations().forEach((k, v) -> {
+    public void createAnnotations(KnativeConfig config,
+            KubernetesConfig kubernetesConfig,
+            BuildProducer<KubernetesAnnotationBuildItem> annotations) {
+        Map<String, String> annotationsFromConfig = config.getAnnotations();
+        if (annotationsFromConfig.isEmpty()) {
+            annotationsFromConfig = kubernetesConfig.getAnnotations();
+        }
+        annotationsFromConfig.forEach((k, v) -> {
             annotations.produce(new KubernetesAnnotationBuildItem(k, v, KNATIVE));
         });
     }
 
     @BuildStep
-    public void createLabels(KnativeConfig config, BuildProducer<KubernetesLabelBuildItem> labels,
+    public void createLabels(KnativeConfig config,
+            KubernetesConfig kubernetesConfig,
+            BuildProducer<KubernetesLabelBuildItem> labels,
             BuildProducer<ContainerImageLabelBuildItem> imageLabels) {
-        config.getLabels().forEach((k, v) -> {
+        Map<String, String> labelsFromConfig = config.getLabels();
+        if (labelsFromConfig.isEmpty()) {
+            labelsFromConfig = kubernetesConfig.getLabels();
+        }
+        labelsFromConfig.forEach((k, v) -> {
             labels.produce(new KubernetesLabelBuildItem(k, v, KNATIVE));
             imageLabels.produce(new ContainerImageLabelBuildItem(k, v));
         });
     }
 
     @BuildStep
-    public List<ConfiguratorBuildItem> createConfigurators(KnativeConfig config, List<KubernetesPortBuildItem> ports) {
+    public List<ConfiguratorBuildItem> createConfigurators(KnativeConfig config,
+            KubernetesConfig kubernetesConfig,
+            List<KubernetesPortBuildItem> ports) {
         List<ConfiguratorBuildItem> result = new ArrayList<>();
-        KubernetesCommonHelper.combinePorts(ports, config).values()
+        KubernetesCommonHelper.combinePorts(ports, defaultMapIfEmpty(config.getPorts(), kubernetesConfig.getPorts())).values()
                 .stream()
                 // At the moment, Knative only supports single port binding: https://github.com/knative/serving/issues/8471
                 .filter(p -> p.getName().equals("http"))
@@ -133,6 +149,7 @@ public class KnativeProcessor {
     public List<DecoratorBuildItem> createDecorators(ApplicationInfoBuildItem applicationInfo,
             OutputTargetBuildItem outputTarget,
             KnativeConfig config,
+            KubernetesConfig kubernetesConfig,
             PackageConfig packageConfig,
             Optional<MetricsCapabilityBuildItem> metricsConfiguration,
             Optional<KubernetesClientCapabilityBuildItem> kubernetesClientConfiguration,
@@ -162,7 +179,9 @@ public class KnativeProcessor {
         String name = ResourceNameUtil.getResourceName(config, applicationInfo);
         Optional<Project> project = KubernetesCommonHelper.createProject(applicationInfo, customProjectRoot, outputTarget,
                 packageConfig);
-        Optional<Port> port = KubernetesCommonHelper.getPort(ports, config, "http");
+        Optional<Port> port = KubernetesCommonHelper.getPort(ports,
+                defaultMapIfEmpty(config.getPorts(), kubernetesConfig.getPorts()),
+                "http");
         result.addAll(KubernetesCommonHelper.createDecorators(project, KNATIVE, name, config,
                 metricsConfiguration, kubernetesClientConfiguration, annotations,
                 labels, command, port, livenessPath, readinessPath, startupProbePath,

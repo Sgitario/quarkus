@@ -114,7 +114,7 @@ public class VanillaKubernetesProcessor {
     @BuildStep
     public List<ConfiguratorBuildItem> createConfigurators(KubernetesConfig config, List<KubernetesPortBuildItem> ports) {
         List<ConfiguratorBuildItem> result = new ArrayList<>();
-        KubernetesCommonHelper.combinePorts(ports, config).values().forEach(value -> {
+        KubernetesCommonHelper.combinePorts(ports, config.getPorts()).values().forEach(value -> {
             result.add(new ConfiguratorBuildItem(new AddPortToKubernetesConfig(value)));
         });
         if (config.ingress != null) {

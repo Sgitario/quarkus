@@ -124,6 +124,10 @@ public class KubernetesConfigUtil {
         return result;
     }
 
+    public static <T> Map<String, T> defaultMapIfEmpty(Map<String, T> map, Map<String, T> defaultMap) {
+        return map == null || map.isEmpty() ? defaultMap : map;
+    }
+
     public static boolean managementPortIsEnabled() {
         return ConfigProvider.getConfig().getOptionalValue("quarkus.management.enabled", Boolean.class).orElse(false);
     }

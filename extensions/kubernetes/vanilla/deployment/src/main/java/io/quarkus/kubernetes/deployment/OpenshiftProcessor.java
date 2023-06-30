@@ -10,6 +10,7 @@ import static io.quarkus.kubernetes.deployment.Constants.READINESS_PROBE;
 import static io.quarkus.kubernetes.deployment.Constants.ROUTE;
 import static io.quarkus.kubernetes.deployment.Constants.STARTUP_PROBE;
 import static io.quarkus.kubernetes.deployment.KubernetesConfigUtil.MANAGEMENT_PORT_NAME;
+import static io.quarkus.kubernetes.deployment.KubernetesConfigUtil.defaultMapIfEmpty;
 import static io.quarkus.kubernetes.deployment.KubernetesConfigUtil.managementPortIsEnabled;
 import static io.quarkus.kubernetes.deployment.OpenshiftConfig.OpenshiftFlavor.v3;
 import static io.quarkus.kubernetes.spi.KubernetesDeploymentTargetBuildItem.DEFAULT_PRIORITY;
@@ -124,16 +125,24 @@ public class OpenshiftProcessor {
     }
 
     @BuildStep
-    public void createAnnotations(OpenshiftConfig config, BuildProducer<KubernetesAnnotationBuildItem> annotations) {
-        config.getAnnotations().forEach((k, v) -> {
+    public void createAnnotations(OpenshiftConfig config,
+            KubernetesConfig kubernetesConfig,
+            BuildProducer<KubernetesAnnotationBuildItem> annotations) {
+        Map<String, String> annotationsFromConfig = config.getAnnotations();
+        if (annotationsFromConfig.isEmpty()) {
+            annotationsFromConfig = kubernetesConfig.getAnnotations();
+        }
+        annotationsFromConfig.forEach((k, v) -> {
             annotations.produce(new KubernetesAnnotationBuildItem(k, v, OPENSHIFT));
         });
     }
 
     @BuildStep
-    public void createLabels(OpenshiftConfig config, BuildProducer<KubernetesLabelBuildItem> labels,
+    public void createLabels(OpenshiftConfig config,
+            KubernetesConfig kubernetesConfig,
+            BuildProducer<KubernetesLabelBuildItem> labels,
             BuildProducer<ContainerImageLabelBuildItem> imageLabels) {
-        config.getLabels().forEach((k, v) -> {
+        defaultMapIfEmpty(config.getLabels(), kubernetesConfig.getLabels()).forEach((k, v) -> {
             labels.produce(new KubernetesLabelBuildItem(k, v, OPENSHIFT));
             imageLabels.produce(new ContainerImageLabelBuildItem(k, v));
         });
@@ -142,14 +151,17 @@ public class OpenshiftProcessor {
 
     @BuildStep
     public List<ConfiguratorBuildItem> createConfigurators(ApplicationInfoBuildItem applicationInfo,
-            OpenshiftConfig config, Capabilities capabilities, Optional<ContainerImageInfoBuildItem> image,
+            OpenshiftConfig config,
+            KubernetesConfig kubernetesConfig,
+            Capabilities capabilities,
+            Optional<ContainerImageInfoBuildItem> image,
             List<KubernetesPortBuildItem> ports) {
 
         List<ConfiguratorBuildItem> result = new ArrayList<>();
 
-        KubernetesCommonHelper.combinePorts(ports, config).values().forEach(value -> {
-            result.add(new ConfiguratorBuildItem(new AddPortToOpenshiftConfig(value)));
-        });
+        KubernetesCommonHelper.combinePorts(ports, defaultMapIfEmpty(config.getPorts(), kubernetesConfig.getPorts()))
+                .values()
+                .forEach(value -> result.add(new ConfiguratorBuildItem(new AddPortToOpenshiftConfig(value))));
 
         result.add(new ConfiguratorBuildItem(new ApplyOpenshiftRouteConfigurator(config.route)));
 
@@ -179,6 +191,7 @@ public class OpenshiftProcessor {
     public List<DecoratorBuildItem> createDecorators(ApplicationInfoBuildItem applicationInfo,
             OutputTargetBuildItem outputTarget,
             OpenshiftConfig config,
+            KubernetesConfig kubernetesConfig,
             ContainerImageConfig containerImageConfig,
             Optional<FallbackContainerImageRegistryBuildItem> fallbackRegistry,
             PackageConfig packageConfig,
@@ -215,7 +228,9 @@ public class OpenshiftProcessor {
 
         Optional<Project> project = KubernetesCommonHelper.createProject(applicationInfo, customProjectRoot, outputTarget,
                 packageConfig);
-        Optional<Port> port = KubernetesCommonHelper.getPort(ports, config, config.route.targetPort);
+        Optional<Port> port = KubernetesCommonHelper.getPort(ports,
+                defaultMapIfEmpty(config.getPorts(), kubernetesConfig.getPorts()),
+                config.route.targetPort);
         result.addAll(KubernetesCommonHelper.createDecorators(project, OPENSHIFT, name, config,
                 metricsConfiguration, kubernetesClientConfiguration,
                 annotations, labels, command,
@@ -322,18 +337,18 @@ public class OpenshiftProcessor {
         }
 
         // Probe port handling
-        result.add(KubernetesCommonHelper.createProbeHttpPortDecorator(name, OPENSHIFT, LIVENESS_PROBE, config.livenessProbe,
+        result.add(KubernetesCommonHelper.createProbeHttpPortDecorator(name, OPENSHIFT, LIVENESS_PROBE, config.getLivenessProbe(),
                 portName,
                 ports,
-                config.ports));
-        result.add(KubernetesCommonHelper.createProbeHttpPortDecorator(name, OPENSHIFT, READINESS_PROBE, config.readinessProbe,
+                config.getPorts()));
+        result.add(KubernetesCommonHelper.createProbeHttpPortDecorator(name, OPENSHIFT, READINESS_PROBE, config.getReadinessProbe(),
                 portName,
                 ports,
-                config.ports));
-        result.add(KubernetesCommonHelper.createProbeHttpPortDecorator(name, OPENSHIFT, STARTUP_PROBE, config.startupProbe,
+                config.getPorts()));
+        result.add(KubernetesCommonHelper.createProbeHttpPortDecorator(name, OPENSHIFT, STARTUP_PROBE, config.getStartupProbe(),
                 portName,
                 ports,
-                config.ports));
+                config.getPorts()));
 
         // Handle non-openshift builds
         if (deploymentKind == DeploymentResourceKind.DeploymentConfig

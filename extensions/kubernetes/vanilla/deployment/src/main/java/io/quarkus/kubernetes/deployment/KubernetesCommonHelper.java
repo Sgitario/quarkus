@@ -145,14 +145,15 @@ public class KubernetesCommonHelper {
      * Creates the configurator build items.
      */
     public static Optional<Port> getPort(List<KubernetesPortBuildItem> ports, KubernetesConfig config) {
-        return getPort(ports, config, config.ingress.targetPort);
+        return getPort(ports, config.getPorts(), config.ingress.targetPort);
     }
 
     /**
      * Creates the configurator build items.
      */
-    public static Optional<Port> getPort(List<KubernetesPortBuildItem> ports, PlatformConfiguration config, String targetPort) {
-        return combinePorts(ports, config).values().stream()
+    public static Optional<Port> getPort(List<KubernetesPortBuildItem> ports, Map<String, PortConfig> portsFromConfig,
+            String targetPort) {
+        return combinePorts(ports, portsFromConfig).values().stream()
                 .filter(distinct(p -> p.getName()))
                 .filter(p -> p.getName().equals(targetPort))
                 .findFirst();
@@ -162,13 +163,13 @@ public class KubernetesCommonHelper {
      * Creates the configurator build items.
      */
     public static Map<String, Port> combinePorts(List<KubernetesPortBuildItem> ports,
-            PlatformConfiguration config) {
+            Map<String, PortConfig> portsFromConfig) {
         Map<String, Port> allPorts = new HashMap<>();
         allPorts.putAll(verifyPorts(ports).entrySet().stream()
                 .map(e -> new PortBuilder().withName(e.getKey()).withContainerPort(e.getValue()).build())
                 .collect(Collectors.toMap(Port::getName, p -> p)));
 
-        config.getPorts().entrySet().forEach(e -> {
+        portsFromConfig.entrySet().forEach(e -> {
             String name = e.getKey();
             Port configuredPort = PortConverter.convert(e);
             Port buildItemPort = allPorts.get(name);
