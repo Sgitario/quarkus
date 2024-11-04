@@ -100,6 +100,8 @@ public class ResteasyReactiveDeploymentManager {
          */
         private boolean defaultProduces;
 
+        private boolean removesTrailingSlash = true;
+
         private Map<DotName, ClassInfo> additionalResources = new HashMap<>();
         private Map<DotName, String> additionalResourcePaths = new HashMap<>();
         private Set<String> excludedClasses = new HashSet<>();
@@ -189,6 +191,11 @@ public class ResteasyReactiveDeploymentManager {
             return this;
         }
 
+        public ScanStep setRemovesTrailingSlash(boolean removesTrailingSlash) {
+            this.removesTrailingSlash = removesTrailingSlash;
+            return this;
+        }
+
         public ScanResult scan() {
 
             ApplicationScanningResult applicationScanningResult = ResteasyReactiveScanner.scanForApplicationClass(index,
@@ -221,7 +228,8 @@ public class ResteasyReactiveDeploymentManager {
                             new ResteasyReactiveConfig(inputBufferSize, minChunkSize, outputBufferSize, singleDefaultProduces,
                                     defaultProduces))
                     .setHttpAnnotationToMethod(resources.getHttpAnnotationToMethod())
-                    .setApplicationScanningResult(applicationScanningResult);
+                    .setApplicationScanningResult(applicationScanningResult)
+                    .setRemovesTrailingSlash(removesTrailingSlash);
             for (MethodScanner scanner : methodScanners) {
                 builder.addMethodScanner(scanner);
             }

@@ -108,6 +108,7 @@ public class ServerEndpointIndexer
     protected final List<MethodScanner> methodScanners;
     protected final FieldInjectionIndexerExtension fieldInjectionHandler;
     protected final ConverterSupplierIndexerExtension converterSupplierIndexerExtension;
+    protected final boolean removesTrailingSlash;
 
     protected ServerEndpointIndexer(AbstractBuilder builder) {
         super(builder);
@@ -115,6 +116,7 @@ public class ServerEndpointIndexer
         this.methodScanners = new ArrayList<>(builder.methodScanners);
         this.fieldInjectionHandler = builder.fieldInjectionIndexerExtension;
         this.converterSupplierIndexerExtension = builder.converterSupplierIndexerExtension;
+        this.removesTrailingSlash = builder.removesTrailingSlash;
     }
 
     @Override
@@ -445,9 +447,16 @@ public class ServerEndpointIndexer
         builder.setConverter(new PathSegmentParamConverter.Supplier());
     }
 
+    /**
+     * For the server side, by default, we are removing the trailing slash unless is not configured otherwise.
+     */
     @Override
     protected String handleTrailingSlash(String path) {
-        return path.substring(0, path.length() - 1);
+        if (removesTrailingSlash) {
+            return path.substring(0, path.length() - 1);
+        }
+
+        return path;
     }
 
     @Override
@@ -587,6 +596,7 @@ public class ServerEndpointIndexer
         private List<MethodScanner> methodScanners = new ArrayList<>();
         private FieldInjectionIndexerExtension fieldInjectionIndexerExtension;
         private ConverterSupplierIndexerExtension converterSupplierIndexerExtension = new ReflectionConverterIndexerExtension();
+        private boolean removesTrailingSlash = true;
 
         public EndpointInvokerFactory getEndpointInvokerFactory() {
             return endpointInvokerFactory;
@@ -614,6 +624,11 @@ public class ServerEndpointIndexer
 
         public B setFieldInjectionIndexerExtension(FieldInjectionIndexerExtension fieldInjectionHandler) {
             this.fieldInjectionIndexerExtension = fieldInjectionHandler;
+            return (B) this;
+        }
+
+        public B setRemovesTrailingSlash(boolean removesTrailingSlash) {
+            this.removesTrailingSlash = removesTrailingSlash;
             return (B) this;
         }
 

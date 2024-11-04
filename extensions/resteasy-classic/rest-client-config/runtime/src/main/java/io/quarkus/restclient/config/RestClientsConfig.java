@@ -307,6 +307,14 @@ public class RestClientsConfig {
     @ConfigItem(defaultValue = "true")
     public boolean captureStacktrace;
 
+    /**
+     * If {@code true}, the REST Client paths will automatically remove the trailing slash if any.
+     *
+     * This property is applicable to reactive REST clients only.
+     */
+    @ConfigItem(defaultValue = "true")
+    public boolean removesTrailingSlash;
+
     public RestClientConfig getClientConfig(String configKey) {
         if (configKey == null) {
             return RestClientConfig.EMPTY;

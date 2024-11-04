@@ -52,12 +52,14 @@ public class ClientEndpointIndexer
     private final String[] defaultProduces;
     private final String[] defaultProducesNegotiated;
     private final boolean smartDefaultProduces;
+    private final boolean removesTrailingSlash;
 
     public ClientEndpointIndexer(AbstractBuilder builder, String defaultProduces, boolean smartDefaultProduces) {
         super(builder);
         this.defaultProduces = new String[] { defaultProduces };
         this.defaultProducesNegotiated = new String[] { defaultProduces, MediaType.WILDCARD };
         this.smartDefaultProduces = smartDefaultProduces;
+        this.removesTrailingSlash = builder.removesTrailingSlash;
     }
 
     public MaybeRestClientInterface createClientProxy(ClassInfo classInfo,
@@ -70,7 +72,10 @@ public class ClientEndpointIndexer
                 if (!path.startsWith("/")) {
                     path = "/" + path;
                 }
-                if (path.endsWith("/")) {
+
+                // For the client side, by default, we're only removing the trailing slash for the
+                // `@Path` annotations at class level which is configurable.
+                if (removesTrailingSlash && path.endsWith("/")) {
                     path = path.substring(0, path.length() - 1);
                 }
                 clazz.setPath(path);
@@ -235,6 +240,7 @@ public class ClientEndpointIndexer
 
         private String defaultProduces = MediaType.TEXT_PLAIN;
         private boolean smartDefaultProduces = true;
+        private boolean removesTrailingSlash = true;
 
         public B setDefaultProduces(String defaultProduces) {
             this.defaultProduces = defaultProduces;
@@ -243,6 +249,11 @@ public class ClientEndpointIndexer
 
         public B setSmartDefaultProduces(boolean smartDefaultProduces) {
             this.smartDefaultProduces = smartDefaultProduces;
+            return (B) this;
+        }
+
+        public B setRemovesTrailingSlash(boolean removesTrailingSlash) {
+            this.removesTrailingSlash = removesTrailingSlash;
             return (B) this;
         }
 

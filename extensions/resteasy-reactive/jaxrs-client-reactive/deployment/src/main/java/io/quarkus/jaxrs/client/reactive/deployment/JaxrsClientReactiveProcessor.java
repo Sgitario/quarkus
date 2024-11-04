@@ -271,6 +271,7 @@ public class JaxrsClientReactiveProcessor {
             List<RestClientDefaultProducesBuildItem> defaultConsumes,
             List<RestClientDefaultConsumesBuildItem> defaultProduces,
             List<RestClientDisableSmartDefaultProduces> disableSmartDefaultProduces,
+            List<RestClientRemoveTrailingSlashBuildItem> removeTrailingSlashProduces,
             List<ParameterContainersBuildItem> parameterContainersBuildItems) {
         String defaultConsumesType = defaultMediaType(defaultConsumes, MediaType.APPLICATION_OCTET_STREAM);
         String defaultProducesType = defaultMediaType(defaultProduces, MediaType.TEXT_PLAIN);
@@ -318,6 +319,7 @@ public class JaxrsClientReactiveProcessor {
                 .setHasRuntimeConverters(false)
                 .setDefaultProduces(defaultProducesType)
                 .setSmartDefaultProduces(disableSmartDefaultProduces.isEmpty())
+                .setRemovesTrailingSlash(!removeTrailingSlashProduces.isEmpty())
                 .setSkipMethodParameter(new Predicate<Map<DotName, AnnotationInstance>>() {
                     @Override
                     public boolean test(Map<DotName, AnnotationInstance> anns) {

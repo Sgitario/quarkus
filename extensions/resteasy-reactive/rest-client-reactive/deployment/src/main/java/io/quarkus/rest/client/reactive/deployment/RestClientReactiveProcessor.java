@@ -94,6 +94,7 @@ import io.quarkus.jaxrs.client.reactive.deployment.JaxrsClientReactiveEnricherBu
 import io.quarkus.jaxrs.client.reactive.deployment.RestClientDefaultConsumesBuildItem;
 import io.quarkus.jaxrs.client.reactive.deployment.RestClientDefaultProducesBuildItem;
 import io.quarkus.jaxrs.client.reactive.deployment.RestClientDisableSmartDefaultProduces;
+import io.quarkus.jaxrs.client.reactive.deployment.RestClientRemoveTrailingSlashBuildItem;
 import io.quarkus.rest.client.reactive.runtime.AnnotationRegisteredProviders;
 import io.quarkus.rest.client.reactive.runtime.HeaderCapturingServerFilter;
 import io.quarkus.rest.client.reactive.runtime.HeaderContainer;
@@ -114,7 +115,9 @@ class RestClientReactiveProcessor {
     private static final DotName SESSION_SCOPED = DotName.createSimple(SessionScoped.class.getName());
     private static final DotName KOTLIN_METADATA_ANNOTATION = DotName.createSimple("kotlin.Metadata");
 
-    private static final String DISABLE_SMART_PRODUCES_QUARKUS = "quarkus.rest-client.disable-smart-produces";
+    private static final String QUARKUS_REST_CLIENT_PREFIX = "quarkus.rest-client.";
+    private static final String DISABLE_SMART_PRODUCES_QUARKUS = "disable-smart-produces";
+    private static final String REMOVES_TRAILING_SLASH_QUARKUS = "removes-trailing-slash";
     private static final String ENABLE_COMPRESSION = "quarkus.http.enable-compression";
     private static final String KOTLIN_INTERFACE_DEFAULT_IMPL_SUFFIX = "$DefaultImpls";
 
@@ -152,16 +155,24 @@ class RestClientReactiveProcessor {
     }
 
     @BuildStep
-    void setUpDefaultMediaType(BuildProducer<RestClientDefaultConsumesBuildItem> consumes,
+    void setUpClientBuildTimeProperties(BuildProducer<RestClientDefaultConsumesBuildItem> consumes,
             BuildProducer<RestClientDefaultProducesBuildItem> produces,
             BuildProducer<RestClientDisableSmartDefaultProduces> disableSmartProduces,
+            BuildProducer<RestClientRemoveTrailingSlashBuildItem> removeTrailingSlash,
             RestClientReactiveConfig config) {
         consumes.produce(new RestClientDefaultConsumesBuildItem(MediaType.APPLICATION_JSON, 10));
         produces.produce(new RestClientDefaultProducesBuildItem(MediaType.APPLICATION_JSON, 10));
         Config mpConfig = ConfigProvider.getConfig();
-        Optional<Boolean> disableSmartProducesConfig = mpConfig.getOptionalValue(DISABLE_SMART_PRODUCES_QUARKUS, Boolean.class);
-        if (config.disableSmartProduces || disableSmartProducesConfig.orElse(false)) {
+        boolean disableSmartProducesConfig = getEffectivePropertyValue(DISABLE_SMART_PRODUCES_QUARKUS, false, Boolean.class,
+                mpConfig);
+        if (config.disableSmartProduces || disableSmartProducesConfig) {
             disableSmartProduces.produce(new RestClientDisableSmartDefaultProduces());
+        }
+
+        boolean removesTrailingSlashConfig = getEffectivePropertyValue(REMOVES_TRAILING_SLASH_QUARKUS, true, Boolean.class,
+                mpConfig);
+        if (removesTrailingSlashConfig) {
+            removeTrailingSlash.produce(new RestClientRemoveTrailingSlashBuildItem());
         }
     }
 
@@ -817,5 +828,14 @@ class RestClientReactiveProcessor {
             }
         }
         return scope;
+    }
+
+    private <T> T getEffectivePropertyValue(String property, T defaultValue, Class<T> propertyType,
+            Config mpConfig) {
+        Optional<T> value = mpConfig.getOptionalValue(QUARKUS_REST_CLIENT_PREFIX + property, propertyType);
+        if (value.isPresent()) {
+            return value.get();
+        }
+        return defaultValue;
     }
 }
